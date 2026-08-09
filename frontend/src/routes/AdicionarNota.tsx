@@ -147,33 +147,40 @@ export function AdicionarNota() {
           sensível a foco e iluminação que a foto.
         </p>
 
-        {/* O visor fica sempre montado enquanto a câmera está ativa; o elemento de
-            vídeo precisa existir antes de o ZXing anexar o stream nele. */}
+        {/* O <video> fica SEMPRE montado, apenas oculto quando a câmera está parada.
+            Isto não é detalhe de estilo: renderizá-lo condicionalmente fazia
+            `videoRef.current` ser nulo no momento de anexar o stream, porque o React
+            só re-renderiza depois que o handler do clique termina. Era a causa real de
+            o scanner ao vivo nunca iniciar. */}
+        <div
+          className="visor"
+          hidden={scanner.estado !== "lendo" && scanner.estado !== "iniciando"}
+        >
+          <video ref={scanner.videoRef} muted playsInline autoPlay />
+          <div className="mira" />
+          <div className="botoes-camera">
+            {scanner.temLanterna && (
+              <button
+                onClick={() => void scanner.alternarLanterna()}
+                aria-pressed={scanner.lanternaLigada}
+                title="Lanterna"
+              >
+                {scanner.lanternaLigada ? "🔆" : "🔅"}
+              </button>
+            )}
+            <button onClick={scanner.parar} title="Fechar a câmera">
+              ✕
+            </button>
+          </div>
+          <div className="dica">
+            {scanner.estado === "iniciando"
+              ? "Abrindo a câmera…"
+              : "Encaixe o QR Code do cupom dentro do quadro"}
+          </div>
+        </div>
+
         {scanner.estado === "lendo" || scanner.estado === "iniciando" ? (
           <>
-            <div className="visor">
-              <video ref={scanner.videoRef} muted playsInline autoPlay />
-              <div className="mira" />
-              <div className="botoes-camera">
-                {scanner.temLanterna && (
-                  <button
-                    onClick={() => void scanner.alternarLanterna()}
-                    aria-pressed={scanner.lanternaLigada}
-                    title="Lanterna"
-                  >
-                    {scanner.lanternaLigada ? "🔆" : "🔅"}
-                  </button>
-                )}
-                <button onClick={scanner.parar} title="Fechar a câmera">
-                  ✕
-                </button>
-              </div>
-              <div className="dica">
-                {scanner.estado === "iniciando"
-                  ? "Abrindo a câmera…"
-                  : "Encaixe o QR Code do cupom dentro do quadro"}
-              </div>
-            </div>
             {enviando && (
               <p className="secundario" style={{ marginTop: "0.6rem" }}>
                 Lido! Registrando a nota…

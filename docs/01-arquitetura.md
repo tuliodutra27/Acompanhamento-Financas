@@ -18,11 +18,43 @@ Por isso o app não trata "digitou a chave" como um caminho equivalente que por 
 falhou: ele falha **imediatamente**, com o motivo `sem_url_qrcode`, e manda o usuário
 para o preenchimento manual sem gastar 10 segundos numa requisição condenada.
 
-> Contexto de pesquisa: o portal do RJ (`consultadfe.fazenda.rj.gov.br`) foi testado ao
-> vivo durante o projeto irmão `compara-precos` e tem defesa em três camadas — bloqueio
-> por reputação de IP, anti-bot Imperva no path do QR Code e reCAPTCHA na consulta por
-> chave. Ou seja: mesmo o caminho do QR Code pode ser barrado em alguns estados. O
-> desenho abaixo assume isso como normal, não como exceção.
+### 1.1 O RJ bloqueia IP residencial — descoberto em 09/08/2026, e é decisivo
+
+Testado ao vivo, do próprio homelab, com Chromium real (Playwright). O que se descobriu,
+em ordem, porque a ordem importa:
+
+1. `curl` na página de consulta (`consultaChaveAcesso.faces`) devolve **200 com um
+   desafio JavaScript do F5 Shape** (`loaderConfig = "/TSPD/?type=20"`). É fácil parar
+   aqui e concluir "é anti-bot".
+2. Com um **navegador real**, o desafio se resolve — e por baixo dele aparece a mensagem
+   verdadeira, da própria SEFAZ-RJ:
+
+   > "As operadoras de telecomunicação do Brasil possuem alguns de seus endereços IP
+   > usados por serviços residenciais que estão listados em catálogos internacionais […]
+   > nosso serviço de segurança da informação bloqueia acessos provenientes desses
+   > endereços IP aos serviços que tratam de informações sujeitas a sigilo fiscal."
+   >
+   > "Recomendamos que entre em contato com sua operadora […] para mudar seu endereço IP,
+   > **ou tente acessar o serviço de outra origem**. Adicionalmente, […] poderá entrar em
+   > contato através do [OuvERJ](https://www.rj.gov.br/ouverj/) informando o número do IP
+   > e detalhamento do erro."
+
+**O bloqueio é de reputação de IP, não de automação.** Consequências práticas:
+
+- **Navegador headless não resolve.** O F5 é só o invólucro; o bloqueio vem antes e vale
+  para qualquer cliente naquele IP. Isso poupou implementar um adapter Playwright inteiro
+  — a exploração custou minutos e evitou horas.
+- **O caminho não é técnico, é de origem de rede.** As saídas são as que a própria SEFAZ
+  lista: mudar de IP, acessar de outra origem (outra rede/dispositivo), ou pedir
+  desbloqueio pelo OuvERJ (a mensagem traz um número de incidente).
+- **Captura no dispositivo do usuário volta a ser o plano principal** para extração
+  automática — não por causa de captcha, mas porque o telefone em rede móvel é "outra
+  origem" e pode não estar bloqueado. Precisa ser verificado por rede, não presumido.
+
+> Registro de correção: versões anteriores deste documento afirmavam que o bloqueio era
+> anti-bot (Imperva/reCAPTCHA) e que o IP residencial "não estava bloqueado". Ambas as
+> afirmações estavam erradas, e vinham de parar a investigação no desafio do F5 sem
+> executá-lo.
 
 ## 2. Componentes
 
@@ -159,17 +191,29 @@ interno curto viraria um "GTIN" e faria produtos diferentes colidirem no mesmo a
 
 ## 8. Descartado
 
-- **Consulta automática a partir da chave digitada** — reCAPTCHA. É o motivo de existir
-  o motivo `sem_url_qrcode` em vez de uma tentativa silenciosa.
-- **Browser headless (Playwright) para vencer o anti-bot** — reCAPTCHA não é "parecer
-  humano", é resolver um desafio. A interface do adapter aceita um nível `browser` se um
-  dia aparecer um estado onde compense, mas nenhum foi implementado.
+- **Consulta automática a partir da chave digitada** — o formulário exige interação que
+  não vale automatizar. É o motivo de existir o motivo `sem_url_qrcode` em vez de uma
+  tentativa silenciosa.
+- **Browser headless (Playwright) para vencer o bloqueio do RJ** — investigado e
+  descartado com evidência (seção 1.1): o bloqueio é de reputação de IP e vale para
+  qualquer cliente naquela rede, então um navegador real não muda o resultado. A
+  exploração ficou registrada porque o *método* serve para qualquer outra UF: subir a
+  imagem oficial do Playwright, abrir a página e ler o que aparece **depois** do desafio,
+  em vez de concluir pelo que o `curl` mostra.
 - **Certificado digital e-CPF / web service de Distribuição de DF-e** (puxar todas as
   notas do CPF em lote) — exige certificado pago, e é incerto se NFC-e de varejo aparece
   nessa consulta, já que o CPF é opcional na nota. Investigado no projeto irmão.
 
 ## 9. Em aberto
 
+- **Qual rede consegue alcançar o portal do RJ?** O homelab (banda larga residencial)
+  está bloqueado (seção 1.1). Falta verificar, rede por rede: celular em dados móveis,
+  o PC na mesma LAN, e o telefone como *exit node* do Tailscale (que faria a saída do
+  servidor usar o IP da operadora móvel). A resposta define se a extração automática é
+  possível e por qual caminho — e é um teste de dois minutos, não uma decisão de projeto.
+- **Vale abrir chamado no OuvERJ** pedindo desbloqueio do IP? A própria mensagem da SEFAZ
+  sugere isso e fornece número de incidente. Precedente favorável: o projeto irmão
+  `compara-precos` já trilhou o caminho de pedido formal a órgão estadual.
 - Quais UFs de fato funcionam pelo caminho do QR Code? Só o uso real responde. Cada
   falha grava o motivo, então a resposta se acumula sozinha em `nota_fiscal.erro_detalhe`.
 - Expurgo do `payload_bruto` (`retencao_payload_bruto_dias`, padrão 30) ainda não tem
