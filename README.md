@@ -119,9 +119,14 @@ e depuração.
 
 Dois pontos que **não** devem ficar para depois:
 
-- **Autenticação.** Diferente do `compara-precos` (que lida com preço público), aqui o
-  conteúdo é seu histórico de compras. O caminho mais barato é uma **Access List
-  (Basic Auth)** no Proxy Host do NPM — zero código.
+- **Autenticação — hoje NÃO existe (pendência consciente).** O app está publicado via
+  Tailscale Funnel em `https://<host>.<tailnet>.ts.net:8443`, sem senha: qualquer pessoa
+  com o link lê o histórico de compras (verificado de fora da rede em 09/08/2026).
+  Decisão do autor foi deixar aberto durante a fase de testes. Duas formas de fechar
+  quando quiser: `sudo tailscale serve --bg --https=8443 http://127.0.0.1:8190` em vez de
+  `funnel` (restringe à tailnet, zero código), ou Basic Auth no nginx do container `web`
+  (mantém o acesso público, exige senha). Vale fechar antes de o banco ter um histórico
+  que doa expor.
 - **Backup.** `pg_dump` diário para fora do disco do servidor. Os vínculos
   produto↔item e os itens digitados à mão não são reconstruíveis de nenhuma fonte
   externa.

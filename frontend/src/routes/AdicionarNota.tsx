@@ -84,20 +84,38 @@ export function AdicionarNota() {
           abre a nota direto no portal da SEFAZ.
         </p>
 
+        {/* O visor fica sempre montado enquanto a câmera está ativa; o elemento de
+            vídeo precisa existir antes de o ZXing anexar o stream nele. */}
         {scanner.estado === "lendo" || scanner.estado === "iniciando" ? (
           <>
             <div className="visor">
-              <video ref={scanner.videoRef} muted playsInline />
+              <video ref={scanner.videoRef} muted playsInline autoPlay />
               <div className="mira" />
-            </div>
-            <div className="acoes">
-              <button onClick={scanner.parar}>Parar câmera</button>
-              <span className="secundario" style={{ alignSelf: "center" }}>
+              <div className="botoes-camera">
+                {scanner.temLanterna && (
+                  <button
+                    onClick={() => void scanner.alternarLanterna()}
+                    aria-pressed={scanner.lanternaLigada}
+                    title="Lanterna"
+                  >
+                    {scanner.lanternaLigada ? "🔆" : "🔅"}
+                  </button>
+                )}
+                <button onClick={scanner.parar} title="Fechar a câmera">
+                  ✕
+                </button>
+              </div>
+              <div className="dica">
                 {scanner.estado === "iniciando"
                   ? "Abrindo a câmera…"
-                  : "Aponte para o QR Code do cupom."}
-              </span>
+                  : "Encaixe o QR Code do cupom dentro do quadro"}
+              </div>
             </div>
+            {enviando && (
+              <p className="secundario" style={{ marginTop: "0.6rem" }}>
+                Lido! Registrando a nota…
+              </p>
+            )}
           </>
         ) : (
           <button className="primario" onClick={() => void scanner.iniciar()} disabled={enviando}>

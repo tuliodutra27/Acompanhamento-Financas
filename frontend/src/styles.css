@@ -482,10 +482,13 @@ label {
 
 /* ------------------------------------------------------------------ scanner */
 
+/* Visor alto e grande de propósito: um QR de cupom é pequeno e impresso em papel
+   térmico, e o usuário precisa de espaço para enquadrar sem tremer. O frame pequeno
+   da primeira versão dificultava mirar. */
 .visor {
   position: relative;
   width: 100%;
-  aspect-ratio: 4 / 3;
+  height: min(70vh, 520px);
   background: #000;
   border-radius: var(--raio);
   overflow: hidden;
@@ -497,12 +500,45 @@ label {
   object-fit: cover;
 }
 
+/* Mira quadrada e centralizada: QR Code é quadrado, e uma mira retangular faz o
+   usuário enquadrar errado. */
 .visor .mira {
   position: absolute;
-  inset: 18%;
-  border: 2px solid rgba(255, 255, 255, 0.85);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(70%, 260px);
+  aspect-ratio: 1;
+  border: 2px solid rgba(255, 255, 255, 0.9);
   border-radius: 12px;
   box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35);
+}
+
+.visor .dica {
+  position: absolute;
+  bottom: 0.75rem;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: #fff;
+  font-size: 0.8rem;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  padding: 0 1rem;
+}
+
+.visor .botoes-camera {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  display: flex;
+  gap: 0.4rem;
+}
+
+.visor .botoes-camera button {
+  background: rgba(0, 0, 0, 0.55);
+  border-color: rgba(255, 255, 255, 0.35);
+  color: #fff;
+  padding: 0.45rem 0.6rem;
 }
 
 /* ------------------------------------------------------------------- vários */
