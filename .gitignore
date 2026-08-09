@@ -1,0 +1,30 @@
+# Segredos e dados
+.env
+data/
+*.dump
+*.sql.gz
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+.vite/
+
+# Editor / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Anotações locais de sessão (contexto pessoal/infra, não vão para o repo público)
+SESSAO-HANDOFF.md

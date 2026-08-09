@@ -1,0 +1,547 @@
+/* Tokens e estilos do app.
+ *
+ * Cores de dados: hue única (azul) da paleta de referência de dataviz — todos os
+ * gráficos aqui são de série única (evolução de preço, total por mês, ranking de
+ * gasto), então não há mistura de categorias para desambiguar. Os passos claro/escuro
+ * são os documentados como aprovados nos dois modos, não uma inversão automática.
+ */
+
+:root {
+  color-scheme: light;
+
+  --surface-page: #f9f9f7;
+  --surface-1: #fcfcfb;
+  --surface-2: #f2f2ef;
+
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #898781;
+
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --borda: rgba(11, 11, 11, 0.1);
+
+  --serie-1: #2a78d6;
+  --serie-1-faixa: #b7d3f6; /* mesmo hue, passo claro — a faixa min/max */
+  --serie-1-fraco: #cde2fb;
+
+  --bom: #0ca30c;
+  --atencao: #fab219;
+  --critico: #d03b3b;
+  --sucesso-texto: #006300;
+
+  --raio: 10px;
+  --sombra: 0 1px 2px rgba(11, 11, 11, 0.06), 0 4px 12px rgba(11, 11, 11, 0.04);
+  --fonte: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --surface-page: #0d0d0d;
+    --surface-1: #1a1a19;
+    --surface-2: #232322;
+
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --borda: rgba(255, 255, 255, 0.1);
+
+    --serie-1: #3987e5;
+    --serie-1-faixa: #1c5cab;
+    --serie-1-fraco: #184f95;
+
+    --sucesso-texto: #0ca30c;
+    --sombra: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --surface-page: #0d0d0d;
+  --surface-1: #1a1a19;
+  --surface-2: #232322;
+
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #898781;
+
+  --grid: #2c2c2a;
+  --axis: #383835;
+  --borda: rgba(255, 255, 255, 0.1);
+
+  --serie-1: #3987e5;
+  --serie-1-faixa: #1c5cab;
+  --serie-1-fraco: #184f95;
+
+  --sucesso-texto: #0ca30c;
+  --sombra: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--fonte);
+  background: var(--surface-page);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--serie-1);
+}
+
+/* ---------------------------------------------------------------- estrutura */
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 4.5rem; /* espaço para a barra de navegação fixa */
+}
+
+.conteudo {
+  flex: 1;
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.topo {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--surface-1);
+  border-bottom: 1px solid var(--borda);
+  padding: 0.85rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.topo h1 {
+  font-size: 1.05rem;
+  margin: 0;
+  font-weight: 650;
+}
+
+.nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  background: var(--surface-1);
+  border-top: 1px solid var(--borda);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.nav a {
+  flex: 1;
+  padding: 0.7rem 0.25rem;
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.nav a.ativo {
+  color: var(--serie-1);
+  font-weight: 600;
+}
+
+.nav .icone {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+/* ------------------------------------------------------------------- cartão */
+
+.cartao {
+  background: var(--surface-1);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  padding: 1rem;
+  margin-bottom: 1rem;
+  box-shadow: var(--sombra);
+}
+
+.cartao h2 {
+  margin: 0 0 0.15rem;
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.cartao .legenda {
+  margin: 0 0 0.9rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+/* ---------------------------------------------------------------- stat tile */
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.tile {
+  background: var(--surface-1);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  padding: 0.85rem;
+}
+
+.tile .rotulo {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tile .valor {
+  font-size: 1.5rem;
+  font-weight: 680;
+  margin-top: 0.25rem;
+  line-height: 1.1;
+}
+
+.tile .nota {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 0.2rem;
+}
+
+/* ------------------------------------------------------------------ figuras */
+
+figure {
+  margin: 0;
+}
+
+figcaption {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-top: 0.5rem;
+}
+
+.grafico-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+  overflow: visible;
+}
+
+.eixo-texto {
+  font-size: 10px;
+  fill: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.rotulo-direto {
+  font-size: 11px;
+  font-weight: 620;
+  fill: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--surface-1);
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  padding: 0.5rem 0.6rem;
+  box-shadow: var(--sombra);
+  font-size: 0.78rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+  z-index: 20;
+  transform: translate(-50%, -110%);
+}
+
+.tooltip .tt-titulo {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  margin-bottom: 0.15rem;
+}
+
+.tooltip .tt-valor {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.envelope-grafico {
+  position: relative;
+}
+
+/* ---------------------------------------------------------------- controles */
+
+button,
+.botao {
+  font-family: inherit;
+  font-size: 0.88rem;
+  padding: 0.6rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid var(--borda);
+  background: var(--surface-2);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+button.primario,
+.botao.primario {
+  background: var(--serie-1);
+  border-color: var(--serie-1);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+button.discreto {
+  background: transparent;
+  border-color: transparent;
+  color: var(--serie-1);
+  padding: 0.35rem 0.4rem;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: 0.95rem;
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid var(--axis);
+  background: var(--surface-1);
+  color: var(--text-primary);
+}
+
+input:focus,
+select:focus {
+  outline: 2px solid var(--serie-1);
+  outline-offset: 1px;
+}
+
+label {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.3rem;
+  font-weight: 550;
+}
+
+.campo {
+  margin-bottom: 0.8rem;
+}
+
+.linha-campos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 0.6rem;
+}
+
+.acoes {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+/* ------------------------------------------------------------------ avisos */
+
+.aviso {
+  border-radius: 8px;
+  padding: 0.7rem 0.8rem;
+  font-size: 0.83rem;
+  margin-bottom: 0.9rem;
+  border: 1px solid var(--borda);
+  background: var(--surface-2);
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.aviso .icone {
+  flex-shrink: 0;
+}
+
+.aviso.erro {
+  border-color: var(--critico);
+}
+
+.aviso.ok {
+  border-color: var(--bom);
+}
+
+.aviso.atencao {
+  border-color: var(--atencao);
+}
+
+/* ------------------------------------------------------------------ listas */
+
+.lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.lista > li {
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--grid);
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.lista > li:last-child {
+  border-bottom: none;
+}
+
+.lista .cresce {
+  flex: 1;
+  min-width: 0;
+}
+
+.lista .titulo {
+  font-size: 0.9rem;
+  font-weight: 560;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lista .sub {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 0.1rem;
+}
+
+.lista .numero {
+  font-variant-numeric: tabular-nums;
+  font-weight: 620;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ tabela */
+
+.tabela-dados {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.tabela-dados th,
+.tabela-dados td {
+  text-align: right;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--grid);
+  font-variant-numeric: tabular-nums;
+}
+
+.tabela-dados th:first-child,
+.tabela-dados td:first-child {
+  text-align: left;
+  font-variant-numeric: normal;
+}
+
+.tabela-dados th {
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+
+.rolagem-x {
+  overflow-x: auto;
+}
+
+/* ------------------------------------------------------------------ scanner */
+
+.visor {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #000;
+  border-radius: var(--raio);
+  overflow: hidden;
+}
+
+.visor video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.visor .mira {
+  position: absolute;
+  inset: 18%;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-radius: 12px;
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35);
+}
+
+/* ------------------------------------------------------------------- vários */
+
+.etiqueta {
+  display: inline-block;
+  font-size: 0.7rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--borda);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.vazio {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+}
+
+.delta-sobe {
+  color: var(--critico);
+  font-weight: 620;
+}
+
+.delta-desce {
+  color: var(--sucesso-texto);
+  font-weight: 620;
+}
+
+.mono {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+
+.secundario {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}

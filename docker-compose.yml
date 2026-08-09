@@ -1,0 +1,42 @@
+# Acompanhamento de Finanças — stack completa.
+#
+# Segue o padrão do homelab: um projeto Compose por app, rede própria, e o Nginx Proxy
+# Manager alcança os containers pelas portas publicadas no host (gateway 172.18.0.1).
+# Portas 8190/8191 escolhidas para não colidir com o compara-precos (8090/8091).
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: financas
+      POSTGRES_USER: financas
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?defina DB_PASSWORD no .env}
+    volumes:
+      - ./data/db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U financas -d financas"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Sem porta publicada: só o backend precisa alcançar o banco.
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://financas:${DB_PASSWORD}@db:5432/financas
+      AMBIENTE: production
+    ports:
+      - "8191:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "8190:80"
+    depends_on:
+      - backend

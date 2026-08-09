@@ -1,0 +1,1 @@
+"""Acompanhamento de Finanças — backend."""
