@@ -36,6 +36,13 @@ export function useScannerQR(onLeitura: (conteudo: string) => void) {
   const [temLanterna, setTemLanterna] = useState(false);
   const [lanternaLigada, setLanternaLigada] = useState(false);
 
+  // Diagnóstico visível na interface. Sem isto, "não está lendo" é indistinguível de
+  // "a câmera nem está entregando frames" — e foi assim que a primeira versão
+  // desperdiçou tempo de investigação.
+  const [tentativas, setTentativas] = useState(0);
+  const [resolucao, setResolucao] = useState<string | null>(null);
+  const [ultimoErroFrame, setUltimoErroFrame] = useState<string | null>(null);
+
   const parar = useCallback(() => {
     controlesRef.current?.stop();
     controlesRef.current = null;
@@ -85,8 +92,18 @@ export function useScannerQR(onLeitura: (conteudo: string) => void) {
           audio: false,
         },
         video,
-        (resultado) => {
-          // Erros aqui são por frame ("nada encontrado") e não interessam.
+        (resultado, erroFrame) => {
+          // Contar as tentativas prova que a câmera está entregando frames e o
+          // decodificador está rodando — a informação que faltava para diferenciar
+          // "não achou o código" de "o laço nem começou".
+          setTentativas((n) => n + 1);
+
+          if (erroFrame) {
+            const nome = erroFrame.name || String(erroFrame);
+            // NotFoundException é o caso normal: este frame não tinha código.
+            if (nome !== "NotFoundException") setUltimoErroFrame(nome);
+          }
+
           if (!resultado || jaLeuRef.current) return;
           jaLeuRef.current = true;
           onLeitura(resultado.getText());
@@ -97,6 +114,16 @@ export function useScannerQR(onLeitura: (conteudo: string) => void) {
       controlesRef.current = controles;
       setTemLanterna(typeof controles.switchTorch === "function");
       setEstado("lendo");
+
+      // A resolução que a câmera de fato entregou (não a pedida) é o dado que diz se
+      // o QR tem pixels suficientes para ser decodificado.
+      const medir = () => {
+        if (video.videoWidth > 0) {
+          setResolucao(`${video.videoWidth}×${video.videoHeight}`);
+        }
+      };
+      medir();
+      video.addEventListener("loadedmetadata", medir, { once: true });
     } catch (causa) {
       // Só chega aqui o que é fatal: permissão negada, sem câmera, decodificador
       // não carregou. Isso precisa ser visível — foi justamente o que a versão
@@ -138,5 +165,6 @@ export function useScannerQR(onLeitura: (conteudo: string) => void) {
     temLanterna,
     lanternaLigada,
     alternarLanterna,
+    diagnostico: { tentativas, resolucao, ultimoErroFrame },
   };
 }

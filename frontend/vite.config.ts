@@ -3,6 +3,14 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
 export default defineConfig({
+  // Selo de build visível na interface. Serve para responder, sem adivinhação, a
+  // pergunta "o celular está rodando a versão nova ou o service worker ainda está
+  // servindo a antiga?" — que já custou tempo de diagnóstico.
+  define: {
+    __BUILD_ID__: JSON.stringify(
+      new Date().toISOString().slice(0, 16).replace("T", " "),
+    ),
+  },
   plugins: [
     react(),
     VitePWA({

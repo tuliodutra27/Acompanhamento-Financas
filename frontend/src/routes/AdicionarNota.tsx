@@ -8,10 +8,11 @@
  * para o preenchimento manual. Melhor dizer isso antes do que decepcionar depois.
  */
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FalhaApi, api } from "../api/client";
 import { useScannerQR } from "../hooks/useScannerQR";
+import { lerQrDeImagem } from "../lib/lerQrDeImagem";
 import {
   MENSAGEM_MOTIVO,
   anoMesLegivel,
@@ -25,6 +26,9 @@ export function AdicionarNota() {
   const [chaveDigitada, setChaveDigitada] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [lendoFoto, setLendoFoto] = useState(false);
+  const [avisoFoto, setAvisoFoto] = useState<string | null>(null);
+  const inputFotoRef = useRef<HTMLInputElement | null>(null);
 
   const enviar = useCallback(
     async (conteudo: string, origem: "qrcode" | "chave_manual") => {
@@ -61,6 +65,30 @@ export function AdicionarNota() {
 
   const scanner = useScannerQR(aoLerQrCode);
 
+  const aoEscolherFoto = useCallback(
+    async (arquivo: File | undefined) => {
+      if (!arquivo) return;
+      setLendoFoto(true);
+      setErro(null);
+      setAvisoFoto(null);
+      try {
+        const { texto, tentativa, resolucao } = await lerQrDeImagem(arquivo);
+        setAvisoFoto(`QR Code lido da foto (${resolucao}, ${tentativa}).`);
+        await enviar(texto, "qrcode");
+      } catch (causa) {
+        setErro(
+          causa instanceof Error
+            ? causa.message
+            : "Não foi possível ler o QR Code desta foto.",
+        );
+      } finally {
+        setLendoFoto(false);
+        if (inputFotoRef.current) inputFotoRef.current.value = "";
+      }
+    },
+    [enviar],
+  );
+
   const digitada = limparChave(chaveDigitada);
   const analise = digitada.length === 44 ? lerChave(digitada) : null;
 
@@ -77,11 +105,46 @@ export function AdicionarNota() {
         </div>
       )}
 
+      {avisoFoto && (
+        <div className="aviso ok">
+          <span className="icone" aria-hidden="true">
+            ✅
+          </span>
+          <span>{avisoFoto}</span>
+        </div>
+      )}
+
+      {/* Caminho por foto primeiro: quem tira a foto é o app de câmera do telefone,
+          com autofoco e todo o processamento do fabricante. Para um QR pequeno em
+          papel térmico isso lê muito melhor que o vídeo ao vivo no navegador. */}
       <section className="cartao">
-        <h2>Escanear o QR Code do cupom</h2>
+        <h2>Fotografar o QR Code</h2>
         <p className="legenda">
-          É o caminho que permite preencher os itens automaticamente — a URL do QR Code
-          abre a nota direto no portal da SEFAZ.
+          Abre a câmera do seu celular. Tire a foto com o QR Code preenchendo boa parte
+          do quadro — é a forma mais confiável de leitura.
+        </p>
+        <input
+          ref={inputFotoRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          style={{ display: "none" }}
+          onChange={(evento) => void aoEscolherFoto(evento.target.files?.[0])}
+        />
+        <button
+          className="primario"
+          disabled={lendoFoto || enviando}
+          onClick={() => inputFotoRef.current?.click()}
+        >
+          {lendoFoto ? "Lendo a foto…" : "📸 Tirar foto do QR Code"}
+        </button>
+      </section>
+
+      <section className="cartao">
+        <h2>Ou escanear ao vivo pela câmera</h2>
+        <p className="legenda">
+          Leitura contínua pelo navegador. Mais rápida quando funciona, porém mais
+          sensível a foco e iluminação que a foto.
         </p>
 
         {/* O visor fica sempre montado enquanto a câmera está ativa; o elemento de
@@ -116,6 +179,22 @@ export function AdicionarNota() {
                 Lido! Registrando a nota…
               </p>
             )}
+
+            {/* Diagnóstico à vista: se "tentativas" sobe, a câmera entrega frames e o
+                decodificador roda — o problema é enquadramento/foco. Se fica em 0, o
+                problema é a captura. Sem isso, "não lê" não diz qual dos dois é. */}
+            <p
+              className="secundario"
+              style={{ marginTop: "0.6rem", fontSize: "0.75rem" }}
+            >
+              leituras tentadas: {scanner.diagnostico.tentativas}
+              {scanner.diagnostico.resolucao
+                ? ` · câmera ${scanner.diagnostico.resolucao}`
+                : " · aguardando resolução"}
+              {scanner.diagnostico.ultimoErroFrame
+                ? ` · último erro: ${scanner.diagnostico.ultimoErroFrame}`
+                : ""}
+            </p>
           </>
         ) : (
           <button className="primario" onClick={() => void scanner.iniciar()} disabled={enviando}>
@@ -185,6 +264,15 @@ export function AdicionarNota() {
           {enviando ? "Registrando…" : "Registrar nota"}
         </button>
       </section>
+
+      {/* Selo de build: responde na hora se o celular está com a versão nova ou se o
+          service worker ainda serve a antiga — dúvida que já custou diagnóstico. */}
+      <p
+        className="secundario"
+        style={{ textAlign: "center", fontSize: "0.72rem", marginTop: "-0.4rem" }}
+      >
+        versão {__BUILD_ID__} · leitor ZXing
+      </p>
     </>
   );
 }
