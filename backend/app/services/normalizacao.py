@@ -20,10 +20,12 @@ import re
 import unicodedata
 
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.item_nota import ItemNota
 from app.models.produto import Produto, ProdutoAlias
+from app.services.classificacao import classificar
 
 # Abaixo disso a sugestão é ruído. pg_trgm devolve similaridade entre 0 e 1.
 LIMITE_SIMILARIDADE = 0.35
@@ -127,36 +129,66 @@ async def registrar_alias(
 ) -> None:
     """Grava o vínculo aprendido, para não perguntar de novo na próxima nota.
 
-    Idempotente: se o alias já existe (para qualquer produto), não faz nada — não
-    sobrescreve uma decisão anterior do usuário silenciosamente.
+    Idempotente pelo banco, via ``ON CONFLICT DO NOTHING`` nos índices únicos parciais
+    de ``produto_alias``. Isso preserva a regra de não sobrescrever uma decisão anterior
+    (a linha existente vence) e resolve um caso que a checagem por ``SELECT`` não pegava:
+    a **mesma descrição repetida dentro do mesmo lote**. Objeto ainda não persistido não
+    aparece num ``SELECT``, então dois itens iguais na mesma nota — "RACAO SACHE WHISKAS"
+    duas vezes — inseriam o alias duas vezes e a transação inteira falhava.
     """
     descricao_normalizada = normalizar_descricao(descricao) or None
 
+    linhas = []
     if gtin:
-        ja_existe = await sessao.scalar(
-            select(ProdutoAlias.id).where(ProdutoAlias.gtin == gtin)
-        )
-        if not ja_existe:
-            sessao.add(ProdutoAlias(produto_id=produto_id, gtin=gtin))
-
+        linhas.append({"produto_id": produto_id, "gtin": gtin})
     if descricao_normalizada:
-        ja_existe = await sessao.scalar(
-            select(ProdutoAlias.id).where(
-                ProdutoAlias.descricao_normalizada == descricao_normalizada
-            )
+        linhas.append(
+            {"produto_id": produto_id, "descricao_normalizada": descricao_normalizada}
         )
-        if not ja_existe:
-            sessao.add(
-                ProdutoAlias(
-                    produto_id=produto_id, descricao_normalizada=descricao_normalizada
-                )
-            )
+
+    for linha in linhas:
+        await sessao.execute(
+            pg_insert(ProdutoAlias).values(**linha).on_conflict_do_nothing()
+        )
 
 
-async def autovincular_itens(sessao: AsyncSession, itens: list[ItemNota]) -> int:
-    """Vincula os itens que dão para vincular com certeza. Devolve quantos vinculou.
+async def obter_ou_criar_produto(
+    sessao: AsyncSession, nome: str, categoria: str | None = None
+) -> Produto:
+    """Produto com este nome exato, criando-o se ainda não existir.
 
-    O resto fica com ``produto_id`` nulo — que é, por si só, a fila de revisão.
+    Comparação por nome exato de propósito: quem chama são as regras de
+    ``classificacao``, que já produzem um nome canônico. Casar por similaridade aqui
+    faria "Arroz 1kg" ser absorvido por "Arroz 5kg".
+    """
+    produto = await sessao.scalar(select(Produto).where(Produto.nome == nome))
+    if produto is not None:
+        if categoria and not produto.categoria:
+            produto.categoria = categoria
+        return produto
+
+    produto = Produto(nome=nome, categoria=categoria)
+    sessao.add(produto)
+    await sessao.flush()
+    return produto
+
+
+async def autovincular_itens(
+    sessao: AsyncSession, itens: list[ItemNota], *, usar_regras: bool = True
+) -> int:
+    """Vincula os itens que dão para vincular. Devolve quantos vinculou.
+
+    Duas fontes, nesta ordem:
+
+    1. **Alias** — GTIN ou descrição exata já classificados antes. É memória do que o
+       usuário decidiu, então tem precedência sobre qualquer regra.
+    2. **Regras de padrão** (``services/classificacao``) — traduzem a descrição
+       abreviada do cupom em produto e categoria. É o que faz uma nota nova chegar
+       praticamente classificada, em vez de despejar 100 itens na fila de revisão.
+
+    O que nenhuma das duas resolver fica com ``produto_id`` nulo — que é, por si só, a
+    fila de revisão. Deixar pendente é melhor que adivinhar: vínculo errado contamina a
+    série de preço em silêncio.
     """
     vinculados = 0
     for item in itens:
@@ -166,6 +198,22 @@ async def autovincular_itens(sessao: AsyncSession, itens: list[ItemNota]) -> int
         produto_id = await encontrar_produto_por_alias(
             sessao, gtin=item.gtin, descricao=item.descricao_origem
         )
+
+        if produto_id is None and usar_regras:
+            if achado := classificar(item.descricao_origem):
+                produto = await obter_ou_criar_produto(
+                    sessao, achado.nome, achado.categoria
+                )
+                produto_id = produto.id
+                # Memoriza para que a mesma descrição não precise passar pelas regras
+                # de novo — e para que uma correção manual futura tenha onde morar.
+                await registrar_alias(
+                    sessao,
+                    produto_id=produto_id,
+                    gtin=item.gtin,
+                    descricao=item.descricao_origem,
+                )
+
         if produto_id is not None:
             item.produto_id = produto_id
             vinculados += 1
