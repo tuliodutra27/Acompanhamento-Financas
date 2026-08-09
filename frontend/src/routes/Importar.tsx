@@ -10,21 +10,28 @@
 import { useMemo, useState } from "react";
 
 function montarBookmarklet(base: string): string {
-  // Enviado como text/plain de propósito: mantém a requisição na categoria "simples"
-  // do CORS (sem preflight), então a API não precisa liberar origens externas.
+  // Envia por <form target="_blank">, não por fetch. Um `fetch` para outro domínio
+  // exige que a resposta traga Access-Control-Allow-Origin, senão a promessa rejeita
+  // com "Failed to fetch" — mesmo tendo a requisição chegado e sido processada
+  // (aconteceu na primeira versão). O envio por formulário é uma **navegação**: CORS
+  // não se aplica, e o resultado aparece numa aba nova.
   const codigo = `
     (function(){
       try {
         var html = document.documentElement.outerHTML;
-        if (html.indexOf('tabResult') === -1) {
-          alert('Esta página não parece ser a nota com a lista de itens. Abra a nota completa e tente de novo.');
-          return;
-        }
-        var alvo = '${base}/api/v1/notas/importar-html?url=' + encodeURIComponent(location.href);
-        fetch(alvo, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: html })
-          .then(function(){ window.open('${base}/notas', '_blank'); })
-          .catch(function(e){ alert('Falhou ao enviar: ' + e); });
-      } catch (e) { alert('Erro: ' + e); }
+        var f = document.createElement('form');
+        f.method = 'POST';
+        f.action = '${base}/api/v1/notas/importar-html?url=' + encodeURIComponent(location.href);
+        f.target = '_blank';
+        f.style.display = 'none';
+        var t = document.createElement('textarea');
+        t.name = 'html';
+        t.value = html;
+        f.appendChild(t);
+        document.body.appendChild(f);
+        f.submit();
+        setTimeout(function(){ f.remove(); }, 2000);
+      } catch (e) { alert('Erro no atalho: ' + e); }
     })();
   `;
   return "javascript:" + encodeURIComponent(codigo.replace(/\s+/g, " ").trim());
@@ -112,10 +119,15 @@ export function Importar() {
       <section className="cartao">
         <h2>Não funcionou?</h2>
         <p className="legenda">
-          Se aparecer o aviso de que a página não tem a lista de itens, você provavelmente
-          está na tela de resumo da nota, não na de produtos. Se o layout do portal do seu
-          estado for diferente do padrão, o parser pode não reconhecer — nesse caso a nota
-          continua registrável pela chave, com os itens preenchidos à mão.
+          A aba que abrir vai dizer exatamente o que faltou — se a chave de acesso não
+          apareceu na página, ou se a lista de itens não foi reconhecida — junto com o
+          tamanho recebido e quantos candidatos de chave foram encontrados. Com essa
+          informação dá para ajustar o parser.
+        </p>
+        <p className="legenda">
+          Duas causas comuns: estar na tela de <em>resumo</em> da nota em vez da que lista
+          os produtos; ou a página não exibir a chave de acesso — nesse caso a aba{" "}
+          <strong>Consulta completa</strong> do portal costuma mostrá-la.
         </p>
       </section>
     </>

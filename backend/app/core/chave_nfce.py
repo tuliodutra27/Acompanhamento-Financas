@@ -36,7 +36,6 @@ UF_POR_CODIGO_IBGE: dict[str, str] = {
 }
 
 _SO_DIGITOS = re.compile(r"\D")
-_SEQUENCIA_44_DIGITOS = re.compile(r"\d{44}")
 
 
 class ChaveInvalida(ValueError):
@@ -127,6 +126,57 @@ def ler_chave(entrada: str, *, exigir_nfce: bool = False) -> DadosChave:
     )
 
 
+def candidatos_de_chave(texto: str) -> list[str]:
+    """Todas as sequências do texto que *poderiam* ser uma chave de acesso.
+
+    Necessário porque a página da nota mostra a chave de várias formas — corrida de 44
+    dígitos, em blocos de 4 separados por espaço, dentro de um atributo — e a página
+    inteira está cheia de outros números (códigos de produto, valores, IDs de
+    componente JSF).
+
+    Não vale simplesmente apagar os não-dígitos da página e procurar 44 seguidos: isso
+    concatena números vizinhos e produz candidatos falsos. Aqui cada candidato é
+    extraído com sua fronteira preservada e depois **validado pelo dígito
+    verificador** por quem chama — é o dígito verificador que separa a chave real do
+    número que só tem o tamanho certo.
+    """
+    achados: list[str] = []
+
+    def adicionar(valor: str) -> None:
+        limpo = limpar(valor)
+        if len(limpo) == 44 and limpo not in achados:
+            achados.append(limpo)
+
+    # Parâmetros nomeados, quando a página traz a URL de consulta.
+    for achado in re.findall(r"[?&]p=([^&#\"'<>\s]+)", texto, re.IGNORECASE):
+        adicionar(achado.split("|")[0])
+    for achado in re.findall(r"chNFe=(\d{44})", texto, re.IGNORECASE):
+        adicionar(achado)
+
+    # Corrida de 44 dígitos com fronteira (não pega o meio de um número maior).
+    for achado in re.findall(r"(?<!\d)(\d{44})(?!\d)", texto):
+        adicionar(achado)
+
+    # Blocos de 4 dígitos separados por espaço/ponto/hífen — como os portais exibem.
+    for achado in re.findall(r"(?<!\d)((?:\d{4}[\s.\-]+){10}\d{4})(?!\d)", texto):
+        adicionar(achado)
+
+    return achados
+
+
+def extrair_chave_de_html(html: str) -> str:
+    """Encontra a chave de acesso dentro do HTML da página de uma nota.
+
+    Testa cada candidato contra o dígito verificador e devolve o primeiro válido.
+    """
+    for candidato in candidatos_de_chave(html):
+        try:
+            return validar_chave(candidato)
+        except ChaveInvalida:
+            continue
+    raise ChaveInvalida("formato")
+
+
 def extrair_chave_do_qrcode(conteudo: str) -> str:
     """Extrai a chave de acesso do conteúdo lido de um QR Code de NFC-e.
 
@@ -159,8 +209,13 @@ def extrair_chave_do_qrcode(conteudo: str) -> str:
     if len(somente_digitos) == 44:
         return validar_chave(somente_digitos)
 
-    # 4. Último recurso: qualquer corrida de 44 dígitos dentro do texto.
-    if match := _SEQUENCIA_44_DIGITOS.search(somente_digitos or texto):
-        return validar_chave(match.group(0))
+    # 4. Último recurso: candidatos com fronteira preservada, validados um a um.
+    #    (Não apagar os não-dígitos do texto inteiro e procurar 44 seguidos: isso
+    #    concatena números vizinhos e casa lixo que falha no dígito verificador.)
+    for candidato in candidatos_de_chave(texto):
+        try:
+            return validar_chave(candidato)
+        except ChaveInvalida:
+            continue
 
     raise ChaveInvalida("formato")
