@@ -1,6 +1,7 @@
 import { NavLink, Route, Routes } from "react-router-dom";
 import { AdicionarNota } from "./routes/AdicionarNota";
 import { Dashboard } from "./routes/Dashboard";
+import { Importar } from "./routes/Importar";
 import { Notas } from "./routes/Notas";
 import { ProdutoDetalhe } from "./routes/ProdutoDetalhe";
 import { Produtos } from "./routes/Produtos";
@@ -20,6 +21,7 @@ export function App() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/adicionar" element={<AdicionarNota />} />
+          <Route path="/importar" element={<Importar />} />
           <Route path="/notas" element={<Notas />} />
           <Route path="/notas/:id" element={<RevisaoNota />} />
           <Route path="/produtos" element={<Produtos />} />

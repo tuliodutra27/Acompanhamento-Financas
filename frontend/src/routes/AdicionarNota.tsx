@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { FalhaApi, api } from "../api/client";
 import { useScannerQR } from "../hooks/useScannerQR";
 import { lerQrDeImagem } from "../lib/lerQrDeImagem";
@@ -217,6 +217,21 @@ export function AdicionarNota() {
             <span>{scanner.erro}</span>
           </div>
         )}
+      </section>
+
+      {/* O caminho que de fato traz os itens preenchidos. Fica em destaque porque a
+          consulta feita pelo servidor é recusada pelo portal, enquanto o navegador do
+          usuário abre a nota normalmente. */}
+      <section className="cartao">
+        <h2>Importar os itens automaticamente</h2>
+        <p className="legenda">
+          O servidor não consegue abrir o portal da SEFAZ, mas o seu navegador consegue.
+          Com um atalho instalado uma vez, você abre a nota no portal e os itens vêm
+          preenchidos — sem digitar produto por produto.
+        </p>
+        <Link className="botao" to="/importar">
+          ⚙️ Configurar o atalho de importação
+        </Link>
       </section>
 
       <section className="cartao">

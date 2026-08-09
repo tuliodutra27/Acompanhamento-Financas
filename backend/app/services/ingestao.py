@@ -1,4 +1,4 @@
-"""Da chave escaneada/digitada até os itens no banco.
+﻿"""Da chave escaneada/digitada até os itens no banco.
 
 Roda síncrono dentro do request: é um usuário só, e o caminho automático é uma
 requisição HTTP de poucos segundos. ``GET /notas/{id}`` já existe para polling, então
@@ -82,7 +82,7 @@ async def registrar_nota(
     )
 
     # O estabelecimento existe a partir da chave, mesmo sem parse: o CNPJ está lá.
-    await _garantir_estabelecimento(
+    await garantir_estabelecimento(
         sessao, cnpj=dados.cnpj_emitente, uf=dados.uf
     )
 
@@ -144,7 +144,7 @@ async def _aplicar_nota_bruta(
     if bruta.cnpj_emitente:
         nota.cnpj_emitente = bruta.cnpj_emitente
 
-    await _garantir_estabelecimento(
+    await garantir_estabelecimento(
         sessao,
         cnpj=nota.cnpj_emitente,
         uf=bruta.uf or nota.uf,
@@ -171,7 +171,7 @@ async def _aplicar_nota_bruta(
     nota.status = StatusNota.ok
 
 
-async def _garantir_estabelecimento(
+async def garantir_estabelecimento(
     sessao: AsyncSession,
     *,
     cnpj: str | None,
