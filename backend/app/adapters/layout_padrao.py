@@ -26,6 +26,7 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from decimal import Decimal
+from html import unescape
 
 from bs4 import BeautifulSoup, Tag
 
@@ -44,10 +45,18 @@ _SEM_ACENTO = str.maketrans("áàâãéêíóôõúüç", "aaaaeeiooouuc")
 
 
 def _texto(elemento: Tag | None) -> str:
-    """Texto limpo de um elemento, com espaços colapsados."""
+    """Texto limpo de um elemento, com espaços colapsados e entidades resolvidas.
+
+    O ``unescape`` extra existe porque o portal entrega parte das descrições com
+    entidade dupla: o HTML traz ``A&amp;amp;P``, que o parser resolve para ``A&amp;P`` e
+    só um segundo passe transforma em ``A&P``. Apareceu em dado real ("COPO PLAST F
+    A&P 300") e importa: a descrição é a chave de agrupamento por texto, então
+    ``A&amp;P`` e ``A&P`` viriam a ser dois produtos diferentes.
+    """
     if elemento is None:
         return ""
-    return re.sub(r"\s+", " ", elemento.get_text(" ", strip=True)).strip()
+    bruto = re.sub(r"\s+", " ", elemento.get_text(" ", strip=True)).strip()
+    return unescape(bruto)
 
 
 def _comparavel(texto: str) -> str:

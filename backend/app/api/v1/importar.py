@@ -21,7 +21,7 @@ import gzip
 import logging
 from urllib.parse import parse_qs
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,6 +46,28 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["importar"])
 
 TAMANHO_MAXIMO_HTML = 8 * 1024 * 1024
+
+# O atalho é servido de dentro da página da SEFAZ, ou seja, de outra origem. O envio por
+# formulário não precisa disto (navegação não passa por CORS), mas um atalho que use
+# `fetch` precisa, ou a resposta é bloqueada e o usuário vê "Failed to fetch" mesmo com a
+# importação tendo funcionado — foi o que aconteceu na prática.
+#
+# `*` é aceitável **enquanto a API não tem autenticação**: hoje qualquer um que alcance a
+# API já pode chamá-la direto, então liberar a origem não concede nada novo. Ao adicionar
+# autenticação, restringir isto junto — senão uma página de terceiros poderia agir em
+# nome do usuário autenticado.
+CABECALHOS_CORS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Max-Age": "86400",
+}
+
+
+@router.options("/notas/importar-html")
+async def importar_html_preflight() -> Response:
+    """Responde ao preflight, caso o atalho envie um Content-Type não simples."""
+    return Response(status_code=204, headers=CABECALHOS_CORS)
 
 
 def _pagina(titulo: str, corpo: str, cor: str = "#0f766e") -> HTMLResponse:
@@ -98,6 +120,7 @@ async def importar_html(
         return JSONResponse(
             status_code=http,
             content={"erro": {"codigo": codigo, "mensagem": titulo, "detalhes": {}}},
+            headers=CABECALHOS_CORS,
         )
 
     if not html.strip():
@@ -197,11 +220,14 @@ async def importar_html(
         # mão, o dado mais caro de reproduzir aqui.
         if de_formulario:
             return RedirectResponse(f"/notas/{nota.id}", status_code=303)
-        return {
-            "nota_id": nota.id,
-            "importados": 0,
-            "mensagem": f"Nota já importada com {len(nota.itens)} itens.",
-        }
+        return JSONResponse(
+            content={
+                "nota_id": nota.id,
+                "importados": 0,
+                "mensagem": f"Nota já importada com {len(nota.itens)} itens.",
+            },
+            headers=CABECALHOS_CORS,
+        )
 
     nota.emitida_em = bruta.emitida_em or nota.emitida_em
     nota.valor_total = bruta.valor_total or nota.valor_total
@@ -259,4 +285,5 @@ async def importar_html(
             "estabelecimento": bruta.nome_estabelecimento,
             "mensagem": f"{len(itens)} itens importados.",
         },
+        headers=CABECALHOS_CORS,
     )
