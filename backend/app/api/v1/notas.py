@@ -28,7 +28,7 @@ from app.schemas.notas import (
     VincularProduto,
 )
 from app.services.ingestao import registrar_nota, tentar_preencher
-from app.services.normalizacao import registrar_alias
+from app.services.normalizacao import encontrar_produto_por_alias, registrar_alias
 
 router = APIRouter(prefix="/notas", tags=["notas"])
 
@@ -266,10 +266,20 @@ async def adicionar_item(
     produto = await _resolver_produto(
         sessao, payload.produto_id, payload.novo_produto_nome
     )
+    produto_id = produto.id if produto else None
+
+    # Sem produto informado, tenta o vínculo por alias antes de deixar pendente.
+    # Isto é essencial e não um detalhe: a entrada manual é o caminho mais comum do
+    # app, e sem esta busca a "memória" dos aliases só serviria ao parse automático —
+    # o usuário reclassificaria o mesmo arroz em cada nota.
+    if produto_id is None:
+        produto_id = await encontrar_produto_por_alias(
+            sessao, gtin=payload.gtin, descricao=payload.descricao_origem
+        )
 
     item = ItemNota(
         nota_id=nota.id,
-        produto_id=produto.id if produto else None,
+        produto_id=produto_id,
         descricao_origem=payload.descricao_origem.strip(),
         gtin=payload.gtin,
         quantidade=payload.quantidade,
@@ -279,10 +289,12 @@ async def adicionar_item(
     )
     sessao.add(item)
 
-    if produto is not None:
+    if produto_id is not None:
+        # Idempotente: se o vínculo veio da descrição e agora há GTIN, o alias de
+        # GTIN é acrescentado — a próxima nota casa pelo caminho mais confiável.
         await registrar_alias(
             sessao,
-            produto_id=produto.id,
+            produto_id=produto_id,
             gtin=payload.gtin,
             descricao=payload.descricao_origem,
         )

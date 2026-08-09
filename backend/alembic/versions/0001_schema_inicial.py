@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "0001"
 down_revision: str | None = None
@@ -21,12 +22,25 @@ def upgrade() -> None:
     # ter que reclassificar "ARROZ TIO JOAO 5KG" do zero em cada nota nova.
     op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
 
-    status_nota = sa.Enum(
-        "pendente", "ok", "falhou_parse", "manual", name="status_nota"
+    # Os tipos ENUM são criados aqui, uma vez, por SQL explícito. As referências
+    # usadas nas colunas levam `create_type=False`: sem isso, o `create_table` tenta
+    # criar o tipo de novo e a migration morre com "type already exists".
+    op.execute(
+        "CREATE TYPE status_nota AS ENUM ('pendente', 'ok', 'falhou_parse', 'manual')"
     )
-    origem_entrada = sa.Enum("qrcode", "chave_manual", name="origem_entrada")
-    status_nota.create(op.get_bind(), checkfirst=True)
-    origem_entrada.create(op.get_bind(), checkfirst=True)
+    op.execute("CREATE TYPE origem_entrada AS ENUM ('qrcode', 'chave_manual')")
+
+    status_nota = postgresql.ENUM(
+        "pendente",
+        "ok",
+        "falhou_parse",
+        "manual",
+        name="status_nota",
+        create_type=False,
+    )
+    origem_entrada = postgresql.ENUM(
+        "qrcode", "chave_manual", name="origem_entrada", create_type=False
+    )
 
     op.create_table(
         "estabelecimento",
@@ -192,5 +206,5 @@ def downgrade() -> None:
     op.drop_table("produto_alias")
     op.drop_table("produto")
     op.drop_table("estabelecimento")
-    sa.Enum(name="origem_entrada").drop(op.get_bind(), checkfirst=True)
-    sa.Enum(name="status_nota").drop(op.get_bind(), checkfirst=True)
+    op.execute("DROP TYPE IF EXISTS origem_entrada")
+    op.execute("DROP TYPE IF EXISTS status_nota")

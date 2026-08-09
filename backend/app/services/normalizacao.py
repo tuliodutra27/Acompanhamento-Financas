@@ -78,15 +78,39 @@ async def sugerir_produtos(
 
     Alimenta a tela de revisão: o usuário vê "é algum destes?" em vez de digitar o
     nome do produto de novo a cada nota.
+
+    Duas medidas, e o maior valor entre elas — porque os dois lados da comparação têm
+    comprimentos muito diferentes:
+
+    - ``word_similarity(nome, alvo)`` para o **nome do produto**, que é curto ("Arroz")
+      contra uma descrição longa ("ARROZ BRANCO T1 5 KG"). O ``similarity()`` comum
+      afunda nesse caso: os trigramas sobrando na descrição contam como divergência, e
+      um casamento óbvio fica abaixo de qualquer limite razoável. O ``word_similarity``
+      procura o melhor trecho, que é exatamente a pergunta certa aqui.
+    - ``similarity(alias, alvo)`` para as **descrições já vinculadas** ao produto, que
+      têm o mesmo comprimento do alvo — aí o ``similarity()`` comum é a medida certa, e
+      costuma ser a mais informativa: casa "ARROZ BR TIPO1 5KG" com "ARROZ BRANCO TIPO
+      1 5KG" mesmo sem o nome do produto se parecer com nenhuma das duas.
     """
     alvo = normalizar_descricao(descricao)
     if not alvo:
         return []
 
-    similaridade = func.similarity(func.upper(Produto.nome), alvo)
+    por_nome = func.word_similarity(func.upper(Produto.nome), alvo)
+    por_alias = func.coalesce(
+        func.max(func.similarity(ProdutoAlias.descricao_normalizada, alvo)), 0.0
+    )
+    similaridade = func.greatest(por_nome, por_alias)
+
     consulta = (
         select(Produto.id, Produto.nome, similaridade.label("similaridade"))
-        .where(similaridade > LIMITE_SIMILARIDADE)
+        .outerjoin(
+            ProdutoAlias,
+            (ProdutoAlias.produto_id == Produto.id)
+            & ProdutoAlias.descricao_normalizada.is_not(None),
+        )
+        .group_by(Produto.id, Produto.nome)
+        .having(similaridade > LIMITE_SIMILARIDADE)
         .order_by(similaridade.desc())
         .limit(limite)
     )

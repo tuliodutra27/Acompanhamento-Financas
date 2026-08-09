@@ -85,13 +85,25 @@ npm run dev          # http://localhost:5173, /api encaminhado para :8000
 
 ### Testes
 
+Duas camadas, com propósitos diferentes:
+
 ```bash
-cd backend && pytest
+cd backend && pytest              # 38 testes, ~1s, sem banco e sem rede
+bash scripts/verificar-api.sh     # verificação ponta a ponta, precisa da stack no ar
 ```
 
-Os testes não precisam de banco nem de rede: cobrem a leitura da chave de acesso
-(incluindo o dígito verificador), o parser de HTML contra uma página de exemplo, e a
-normalização de descrições.
+O `pytest` cobre o que é lógica pura: leitura da chave de acesso (incluindo o dígito
+verificador mod-11), o parser de HTML contra uma página de exemplo, normalização de
+descrições e de GTIN. Roda em qualquer lugar, em um segundo.
+
+O `scripts/verificar-api.sh` cobre o que **só existe com Postgres** — o vínculo
+item→produto por alias (que depende de `pg_trgm`) e as agregações mensais. Inclui as
+regressões de dois bugs reais já corrigidos: a entrada manual que não autovinculava, e a
+sugestão que não casava nome curto ("Arroz") com descrição longa ("ARROZ BRANCO T1 5 KG").
+
+> O script cria notas sintéticas. Ele **não** limpa o banco no fim, de propósito — o
+> comando de limpeza está comentado no topo do arquivo, para rodar conscientemente. Não
+> rode `TRUNCATE` num banco que já tem suas notas de verdade.
 
 ## Deploy no homelab
 
