@@ -99,12 +99,11 @@ O padrão do homelab é um projeto Compose por app, com o Nginx Proxy Manager al
 os containers pelas portas publicadas no host. Este app usa **8190** (web) e **8191**
 (API) — escolhidas para não colidir com o `compara-precos` (8090/8091).
 
-No NPM, criar um Proxy Host com duas Custom Locations:
-
-| Location | Destino |
-|---|---|
-| `/` | `172.18.0.1:8190` |
-| `/api` | `172.18.0.1:8191` |
+No NPM basta **um Proxy Host apontando para `172.18.0.1:8190`**, sem Custom Location
+extra: o nginx do container `web` já encaminha `/api` para o backend internamente. Isso
+mantém o app numa única origem em qualquer cenário (direto na porta, atrás do NPM, ou em
+dev) e elimina CORS do desenho. A porta 8191 fica publicada só para acesso direto à API
+e depuração.
 
 Dois pontos que **não** devem ficar para depois:
 

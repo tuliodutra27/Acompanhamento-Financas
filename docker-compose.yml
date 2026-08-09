@@ -38,5 +38,8 @@ services:
     restart: unless-stopped
     ports:
       - "8190:80"
+    # O nginx do `web` encaminha /api para o backend, então basta um Proxy Host
+    # apontando para 8190 no NPM — sem Custom Location separada para a API.
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy

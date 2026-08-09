@@ -27,8 +27,14 @@ async function criarDetector(): Promise<DetectorDeCodigo> {
 
   if (nativo) return new nativo({ formats: ["qr_code"] });
 
-  const { BarcodeDetector } = await import("barcode-detector/ponyfill");
-  return new BarcodeDetector({ formats: ["qr_code"] }) as DetectorDeCodigo;
+  // Importa da raiz do pacote, não de um subpath: a raiz exporta o ponyfill (sem
+  // mexer em globais) e tem tipos em todas as versões, enquanto `./ponyfill` só
+  // existe a partir da v3. Import dinâmico para o decoder WASM ficar fora do
+  // bundle principal em quem tem a API nativa.
+  const { BarcodeDetector } = await import("barcode-detector");
+  return new BarcodeDetector({
+    formats: ["qr_code"],
+  }) as unknown as DetectorDeCodigo;
 }
 
 export function useScannerQR(onLeitura: (conteudo: string) => void) {

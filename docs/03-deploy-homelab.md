@@ -36,19 +36,22 @@ curl -sI localhost:8190                        # 200 do nginx do frontend
 
 ## 3. Nginx Proxy Manager
 
-Novo **Proxy Host**, com duas Custom Locations (o app fala com `/api/v1/...` em caminho
-relativo, então o roteamento por path é o suficiente — sem CORS em produção):
+Novo **Proxy Host**, uma entrada só:
 
-| Location | Forward |
+| Forward Hostname / IP | Porta |
 |---|---|
-| `/` | `172.18.0.1:8190` |
-| `/api` | `172.18.0.1:8191` |
+| `172.18.0.1` | `8190` |
+
+Não precisa de Custom Location para `/api`: o nginx do container `web` encaminha `/api`
+para o backend pela rede interna do Compose (ver `frontend/nginx.conf`). O app roda numa
+única origem em qualquer cenário — direto na porta, atrás do NPM, ou em dev — e CORS sai
+do desenho. A porta 8191 segue publicada apenas para acesso direto à API e depuração.
 
 Se o ingress público for o Tailscale Funnel (que já termina TLS antes de chegar ao NPM),
 deixar o SSL desligado neste Proxy Host. O Funnel tem limite de 3 portas simultâneas —
-se as portas já estão ocupadas, este app entra como **outra Custom Location no Proxy Host
-existente** (ex. `/financas` e `/financas/api`) em vez de reivindicar uma porta nova.
-Nesse caso, ajustar o `base` do Vite e o prefixo da API.
+se as três já estiverem ocupadas, este app entra como uma Custom Location num Proxy Host
+existente (ex. `/financas` → `172.18.0.1:8190`); nesse caso é preciso ajustar o `base` do
+Vite e o prefixo da API, porque o app assume estar servido na raiz.
 
 > **HTTPS não é opcional aqui.** O scanner de QR Code usa `getUserMedia`, que só funciona
 > em contexto seguro (exceto `localhost`). Sem TLS, o app funciona mas o scanner não abre
