@@ -50,6 +50,19 @@ class TestAgrupaMarcas:
         }
         assert nomes == {"Guaraná 300ml"}
 
+    def test_sanduiche_congelado_agrupa_com_e_sem_gramatura(self):
+        """Parte das descrições traz a gramatura e parte não — não pode dividir.
+
+        Se a regra usasse `com_tamanho`, "SAND HOT H MARCA 145" e "SAND HOT HIT MARCA"
+        virariam dois produtos, e o histórico de preço de um item só ficaria partido.
+        """
+        nomes = {
+            classificado("HOT POCKET MARCA 145").nome,
+            classificado("SAND HOT H MARCA 145").nome,
+            classificado("SAND HOT HIT MARCA").nome,
+        }
+        assert nomes == {"Sanduíche congelado"}
+
 
 class TestSeparaOQueMudaOPreco:
     """Agrupar tamanho ou variedade diferente tornaria a série de preço enganosa."""

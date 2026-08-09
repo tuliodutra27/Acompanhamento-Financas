@@ -113,6 +113,18 @@ REGRAS: tuple[Regra, ...] = (
     Regra(r"HAMBURG.*(FGO|FRANGO)", "Hambúrguer de frango", CONGELADOS),
     Regra(r"HAMBURG", "Hambúrguer bovino", CONGELADOS),
     Regra(r"\bNUGGET", "Nuggets", CONGELADOS),
+    Regra(r"\bEMPANADO|\bSTEAK\s*FGO", "Empanado de frango", CONGELADOS),
+    # Sanduíche congelado recheado, vendido como porção individual. Sem `com_tamanho`
+    # de propósito: parte das descrições traz o "145" e parte não (o portal corta), e
+    # com sufixo o mesmo produto se dividiria em "Sanduíche congelado 145g" e
+    # "Sanduíche congelado". Porção individual não varia o bastante para justificar.
+    Regra(
+        r"HOT\s*POCKET|\bSAND\s*HOT|SANDUICHE.*(HOT|CONG)",
+        "Sanduíche congelado",
+        CONGELADOS,
+    ),
+    Regra(r"\bLASANHA", "Lasanha congelada", CONGELADOS),
+    Regra(r"PAO\s*DE\s*QUEIJO", "Pão de queijo", CONGELADOS),
     Regra(r"\bPIZZA", "Pizza congelada", CONGELADOS),
     Regra(r"\bPOLPA", "Polpa de fruta", CONGELADOS),
     Regra(r"BROCOLIS.*(DAUCY|CONG)", "Brócolis congelado", CONGELADOS),
