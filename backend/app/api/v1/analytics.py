@@ -100,6 +100,23 @@ async def produtos_da_categoria(
     )
 
 
+@router.get("/grupos-suspeitos")
+async def grupos_suspeitos(
+    fator_preco: float = Query(
+        3.0,
+        ge=1.5,
+        description="A partir de quantas vezes entre o menor e o maior preço suspeitar",
+    ),
+    sessao: AsyncSession = Depends(get_session),
+) -> list[dict[str, object]]:
+    """Produtos que provavelmente agrupam coisas diferentes.
+
+    Serve para pegar o erro silencioso de classificação: dois produtos distintos sob o
+    mesmo nome geram uma "variação de preço" que parece insight e é só troca de formato.
+    """
+    return await analytics.grupos_suspeitos(sessao, fator_preco=fator_preco)
+
+
 @router.get("/totais")
 async def totais(sessao: AsyncSession = Depends(get_session)) -> dict[str, object]:
     """Números do topo do dashboard, incluindo quantos itens aguardam revisão."""

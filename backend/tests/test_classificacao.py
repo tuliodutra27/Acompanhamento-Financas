@@ -119,9 +119,76 @@ class TestOrdemDasRegras:
             # queijo ralado antes de queijo
             ("QJ LA PARMEZON 40G R", "Queijo ralado", "Frios e laticínios"),
             ("QJ MUCA MARCA kg", "Queijo muçarela", "Frios e laticínios"),
+            # abóbora e abobrinha são hortaliças diferentes; a regra antiga juntava
+            ("ABOBRINHA kg GRANEL", "Abobrinha", "Hortifruti"),
+            ("ABOB MADU kg PROCESS", "Abóbora", "Hortifruti"),
+            # azeitona antes de azeite
+            ("AZEITONA VERDE kg FA", "Azeitona", "Mercearia"),
+            ("AZE MARCA 500ML", "Azeite 500ml", "Mercearia"),
+            # refresco em pó antes do líquido
+            ("REFRES PO TANG 18G L", "Refresco em pó", "Mercearia"),
+            ("REF SAB MARCA 1L", "Refresco 1L", "Bebidas"),
+            # iogurte natural antes do genérico
+            ("IOG NAT MARCA 160G", "Iogurte natural", "Frios e laticínios"),
+            ("IOG CHAMYTO MARCA", "Iogurte", "Frios e laticínios"),
+            # massa fresca não é macarrão seco
+            ("FETTUCCINE MEU MENU", "Massa fresca", "Mercearia"),
+            ("MAC C/SEM MARCA 1kg", "Macarrão 1kg", "Mercearia"),
         ],
     )
     def test_par_ambiguo(self, descricao, nome_esperado, categoria_esperada):
+        achado = classificado(descricao)
+        assert achado.nome == nome_esperado
+        assert achado.categoria == categoria_esperada
+
+    @pytest.mark.parametrize(
+        ("descricao", "nome_esperado"),
+        [
+            # O lojista abrevia de formas que não são óbvias; cada uma destas custou
+            # uma nota inteira cair na fila de revisão.
+            ("IOG CHAMYTO MARCA", "Iogurte"),
+            ("PA HI F DU MARCA", "Papel higiênico"),
+            ("PAP TOA MARCA 100", "Papel toalha"),
+            ("DESO CREME MARCA 5", "Desodorante"),
+            ("FAR TRIG MARCA 1kg", "Farinha 1kg"),
+            ("ESCOVA DEN MARCA", "Escova de dente"),
+            ("ABS GEL INT 8 N C/A", "Absorvente"),
+            ("GEL DENT RH MARCA", "Creme dental"),
+            ("PX POLACA B ALASCA k", "Polaca ou merluza"),
+            ("PET TILAP MARCA 6", "Tilápia"),
+            ("PT PERU MARCA kg DEF", "Peito de peru"),
+            ("SALG MARICOTA 420G C", "Salgadinho de festa"),
+            ("PAST SANIT MARCA L5", "Pastilha sanitária"),
+            ("LIMP MULT CREMOSO CI", "Limpador cremoso"),
+            ("CAPS CAPPUC D G 175G", "Cápsulas de café"),
+        ],
+    )
+    def test_abreviacoes_do_cupom(self, descricao, nome_esperado):
+        assert classificado(descricao).nome == nome_esperado
+
+    @pytest.mark.parametrize(
+        ("descricao", "nome_esperado", "categoria_esperada"),
+        [
+            # Cada um destes foi encontrado pelo diagnóstico de grupos suspeitos, depois
+            # de já estar classificado errado no banco — misturando produtos cujo preço
+            # não é comparável.
+            ("EXTRATO TOMATE MARCA", "Extrato de tomate", "Mercearia"),
+            ("TOMATE kg GRANEL", "Tomate", "Hortifruti"),
+            ("BATATA BEM BRASIL 1,", "Batata congelada", "Congelados"),
+            ("BATATA FROSTO 1kg CO", "Batata congelada", "Congelados"),
+            ("BATATA INGLESA kg GR", "Batata inglesa", "Hortifruti"),
+            ("ENERG GUARAVITON 300", "Guaraná 300ml", "Bebidas"),
+            ("ENERG MONSTER 473ML", "Energético", "Bebidas"),
+            ("BEBIDA LAC ENERGIA", "Bebida láctea", "Frios e laticínios"),
+            ("PET TILAP MARCA 6", "Tilápia", "Carnes"),
+            ("PX POLACA B ALASCA k", "Polaca ou merluza", "Carnes"),
+            ("BISC RECH MARCA 16", "Biscoito recheado", "Mercearia"),
+            ("BISC MAIZ MARCA", "Biscoito", "Mercearia"),
+        ],
+    )
+    def test_grupos_que_nao_devem_se_misturar(
+        self, descricao, nome_esperado, categoria_esperada
+    ):
         achado = classificado(descricao)
         assert achado.nome == nome_esperado
         assert achado.categoria == categoria_esperada

@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import Numeric, cast, func, literal, select
+from sqlalchemy import Numeric, cast, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -331,6 +331,84 @@ async def produtos_da_categoria(
         }
         for linha in resultado
     ]
+
+
+async def grupos_suspeitos(
+    sessao: AsyncSession, *, fator_preco: float = 3.0
+) -> list[dict[str, object]]:
+    """Produtos que provavelmente agrupam coisas diferentes.
+
+    Existe porque o erro mais custoso deste app é silencioso: agrupar dois produtos
+    distintos sob o mesmo nome produz uma "variação de preço" que parece um insight e
+    é só troca de formato. Aconteceu de verdade — chimichurri a granel somado a sachê
+    de louro virou "queda de 90%".
+
+    Dois sinais, ambos baratos de calcular:
+
+    - **Unidades misturadas** (KG e UN no mesmo produto): venda por peso e por unidade
+      não compartilham escala de preço. É o sinal mais forte, quase sempre um erro.
+    - **Faixa de preço larga** (máximo ≥ ``fator_preco`` × mínimo): pode ser variação
+      real — hortifruti oscila muito —, então isto é suspeita, não veredito.
+
+    O que fazer com o resultado é decisão humana: separar a regra em
+    ``services/classificacao.py``, ou aceitar que aquele produto varia mesmo.
+    """
+    consulta = (
+        select(
+            Produto.id,
+            Produto.nome,
+            Produto.categoria,
+            func.count(ItemNota.id).label("n_itens"),
+            func.count(func.distinct(ItemNota.unidade)).label("n_unidades"),
+            func.string_agg(
+                func.distinct(func.coalesce(ItemNota.unidade, "?")), literal("/")
+            ).label("unidades"),
+            func.min(ItemNota.valor_unitario).label("menor"),
+            func.max(ItemNota.valor_unitario).label("maior"),
+            func.count(func.distinct(ItemNota.descricao_origem)).label("n_descricoes"),
+        )
+        .select_from(ItemNota)
+        .join(Produto, Produto.id == ItemNota.produto_id)
+        .group_by(Produto.id, Produto.nome, Produto.categoria)
+        .having(
+            or_(
+                func.count(func.distinct(ItemNota.unidade)) > 1,
+                func.max(ItemNota.valor_unitario)
+                >= func.min(ItemNota.valor_unitario) * fator_preco,
+            )
+        )
+    )
+
+    resultado = await sessao.execute(consulta)
+    suspeitos = []
+    for linha in resultado:
+        menor = float(linha.menor or 0)
+        maior = float(linha.maior or 0)
+        motivos = []
+        if (linha.n_unidades or 0) > 1:
+            motivos.append(f"unidades misturadas ({linha.unidades})")
+        if menor > 0 and maior / menor >= fator_preco:
+            motivos.append(f"preço varia {maior / menor:.1f}×")
+
+        suspeitos.append(
+            {
+                "produto_id": linha.id,
+                "nome": linha.nome,
+                "categoria": linha.categoria,
+                "n_itens": int(linha.n_itens or 0),
+                "n_descricoes": int(linha.n_descricoes or 0),
+                "menor_preco": menor,
+                "maior_preco": maior,
+                "motivos": motivos,
+                # Unidade misturada é quase sempre erro; faixa larga pode ser real.
+                "gravidade": "alta" if (linha.n_unidades or 0) > 1 else "media",
+            }
+        )
+
+    return sorted(
+        suspeitos,
+        key=lambda s: (s["gravidade"] != "alta", -(s["maior_preco"] / max(s["menor_preco"], 0.01))),
+    )
 
 
 async def totais_gerais(sessao: AsyncSession) -> dict[str, object]:

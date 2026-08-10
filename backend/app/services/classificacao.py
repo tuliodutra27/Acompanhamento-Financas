@@ -88,6 +88,14 @@ class Regra:
 
 # A ordem importa: a primeira regra que casar vence. Regras mais específicas primeiro.
 REGRAS: tuple[Regra, ...] = (
+    # ================================ tomate processado (antes do hortifruti)
+    # `EXTRATO TOMATE` era classificado como tomate fresco: o guarda na regra do
+    # hortifruti é um lookahead, e só olha o que vem **depois** de "TOMATE" — aqui a
+    # palavra que desqualifica vem antes. Resolver por ordem é mais simples e mais
+    # legível que um regex com lookbehind.
+    Regra(r"EXTRATO.*TOMATE|\bEXT\s*TOM", "Extrato de tomate", MERCEARIA),
+    Regra(r"MOL\s*TOM|MOLHO.*TOMATE", "Molho de tomate", MERCEARIA),
+    Regra(r"TOMATE\s*SECO", "Tomate seco", MERCEARIA),
     # ================================================================= carnes
     Regra(r"\bMOID", "Carne moída", CARNES),
     Regra(r"\bALCAT", "Alcatra", CARNES),
@@ -105,7 +113,12 @@ REGRAS: tuple[Regra, ...] = (
     Regra(r"\bASA.*(FGO|FRANGO)", "Asa de frango", CARNES),
     Regra(r"\bLINGUI", "Linguiça", CARNES),
     Regra(r"\bBACON", "Bacon", CARNES),
-    Regra(r"\bPEIXE|\bTILAPIA|\bSALMAO|\bSARDINHA\s*FRESC", "Peixe", CARNES),
+    # Separado por espécie: filé embalado (UN) e peixe a granel (KG) não compartilham
+    # escala de preço, e "Peixe" juntando tudo gerava faixa de 28 a 40 sem significado.
+    Regra(r"\bTILAP", "Tilápia", CARNES),
+    Regra(r"\bPOLACA|\bMERLUZA|\bPX\b", "Polaca ou merluza", CARNES),
+    Regra(r"\bSALMAO", "Salmão", CARNES),
+    Regra(r"\bPEIXE|\bSARDINHA\s*FRESC", "Peixe", CARNES),
     # ============================================================= congelados
     # "MINI HAMBURG" antes de "HAMBURG", senão o mini vira hambúrguer comum e a
     # série de preço mistura produtos de tamanhos bem diferentes.
@@ -129,19 +142,29 @@ REGRAS: tuple[Regra, ...] = (
     Regra(r"\bPOLPA", "Polpa de fruta", CONGELADOS),
     Regra(r"BROCOLIS.*(DAUCY|CONG)", "Brócolis congelado", CONGELADOS),
     Regra(
-        r"(MISTURA|SELETA|JARDINEIRA).*(DAUCY|LEGUME|VEGETAL)|LEGUMES?.*CONG",
+        r"(MISTURA|SELETA|JARDINEIRA|SALADA).*(DAUCY|LEGUME|VEGETAL)|LEGUMES?.*CONG",
         "Legumes congelados",
         CONGELADOS,
     ),
-    Regra(r"BATATA.*(FRITA|CONG|PALITO)", "Batata congelada", CONGELADOS),
+    # As marcas aparecem sem a palavra "congelada"/"frita" na descrição, e sem isto
+    # elas caíam na batata fresca — R$ 24 a unidade contra R$ 4 o quilo.
+    Regra(
+        r"BATATA.*(FRITA|CONG|PALITO|NOISETTE|ONDULADA|BEM\s*BRASIL|FROSTO|MCCAIN)",
+        "Batata congelada",
+        CONGELADOS,
+    ),
     Regra(r"\bSORVETE|\bPICOLE", "Sorvete", DOCES),
     # ============================================================= hortifruti
     # "TEMPERO VERDE" antes de "TEMPERO" (que é tempero seco, de mercearia).
     Regra(r"TEMPERO\s*VERDE|CHEIRO\s*VERDE", "Tempero verde", HORTIFRUTI),
     Regra(r"\bALFACE", "Alface", HORTIFRUTI),
     Regra(r"\bBANANA", "Banana", HORTIFRUTI),
-    Regra(r"BATATA\s*(INGLESA|ASTERIX|LAVADA)|^BATATA\b", "Batata inglesa", HORTIFRUTI),
+    # "BATATA DOCE" antes de "^BATATA": a regra genérica capturava a doce e a
+    # classificava como inglesa, misturando dois preços diferentes.
     Regra(r"BATATA\s*DOCE", "Batata doce", HORTIFRUTI),
+    # Exige "INGLESA"/"kg": o `^BATATA` genérico de antes capturava batata congelada
+    # de marca, que vem em pacote e custa por unidade.
+    Regra(r"BATATA\s*(INGLESA|ASTERIX|LAVADA)|BATATA.*\bKG\b", "Batata inglesa", HORTIFRUTI),
     Regra(r"\bCEBOLA", "Cebola", HORTIFRUTI),
     Regra(r"\bTOMATE\b(?!.*(MOL|EXTRA|SECO))", "Tomate", HORTIFRUTI),
     Regra(r"\bLARANJA", "Laranja", HORTIFRUTI),
@@ -163,7 +186,10 @@ REGRAS: tuple[Regra, ...] = (
     Regra(r"\bCOUVE", "Couve", HORTIFRUTI),
     Regra(r"\bREPOLHO", "Repolho", HORTIFRUTI),
     Regra(r"\bPIMENTAO", "Pimentão", HORTIFRUTI),
-    Regra(r"\bABOBRINHA|\bABOBORA", "Abobrinha", HORTIFRUTI),
+    # Abóbora e abobrinha são hortaliças diferentes, com preços diferentes — a regra
+    # antiga juntava as duas sob "Abobrinha". "ABOB" truncado é quase sempre abóbora.
+    Regra(r"\bABOBRINHA", "Abobrinha", HORTIFRUTI),
+    Regra(r"\bABOBORA|\bABOB\b|\bMORANGA", "Abóbora", HORTIFRUTI),
     Regra(r"\bCHUCHU", "Chuchu", HORTIFRUTI),
     Regra(r"\bBETERRABA", "Beterraba", HORTIFRUTI),
     Regra(r"\bPEPINO", "Pepino", HORTIFRUTI),
@@ -193,7 +219,11 @@ REGRAS: tuple[Regra, ...] = (
     Regra(r"(QJ|QUEIJO).*(MINAS|FRESCAL)", "Queijo minas", LATICINIOS),
     Regra(r"\bREQUEIJAO", "Requeijão", LATICINIOS),
     Regra(r"CREME\s*(DE\s*)?LEITE", "Creme de leite", LATICINIOS),
-    Regra(r"\bIOGURTE|\bYOGURT", "Iogurte", LATICINIOS),
+    # "IOG" é a abreviação que o cupom usa. Natural separado do resto: é outro produto,
+    # não outra marca do mesmo.
+    Regra(r"(IOG|IOGURTE)\s*NAT", "Iogurte natural", LATICINIOS),
+    Regra(r"\bIOGURTE|\bYOGURT|\bIOG\b", "Iogurte", LATICINIOS),
+    Regra(r"\bPT\s*PERU|PEITO.*PERU|\bBLANQUET", "Peito de peru", LATICINIOS),
     Regra(r"\bMANTEIGA", "Manteiga", LATICINIOS),
     Regra(r"\bMARGARINA", "Margarina", LATICINIOS),
     Regra(r"\bPRESUNTO", "Presunto", LATICINIOS),
@@ -211,16 +241,26 @@ REGRAS: tuple[Regra, ...] = (
     Regra(r"FEIJAO.*(FRADIN|CAUPI|BRANCO)", "Feijão fradinho", MERCEARIA, com_tamanho=True),
     Regra(r"\bFEIJAO", "Feijão", MERCEARIA, com_tamanho=True),
     Regra(r"\bACUCAR", "Açúcar", MERCEARIA, True, "kg"),
+    # Azeitona antes de azeite: são produtos distintos e o nome começa igual.
+    Regra(r"\bAZEITONA", "Azeitona", MERCEARIA),
     Regra(r"\bAZEITE|\bAZE\b", "Azeite", MERCEARIA, True, "ml"),
     Regra(r"\bOLEO\b", "Óleo de cozinha", MERCEARIA, True, "ml"),
     Regra(r"\bSAL\b", "Sal", MERCEARIA, com_tamanho=True),
-    Regra(r"CAPS.*(NESC|DOLCE|CAFE)|CAPSULA.*CAFE", "Cápsulas de café", MERCEARIA),
+    Regra(
+        r"CAPS.*(NESC|DOLCE|CAFE|CAPPUC|\bD\s*G\b)|CAPSULA.*CAFE",
+        "Cápsulas de café",
+        MERCEARIA,
+    ),
     Regra(r"\bCAFE\b", "Café", MERCEARIA, com_tamanho=True),
     # "MACARRAO INST" antes de "MACARRAO".
     Regra(r"(MACARRAO|MAC)\s*INST|\bLAMEN\b", "Macarrão instantâneo", MERCEARIA),
     Regra(r"\bMACARRAO|\bMAC\s", "Macarrão", MERCEARIA, com_tamanho=True),
-    Regra(r"MOL\s*TOM|MOLHO.*TOMATE", "Molho de tomate", MERCEARIA),
-    Regra(r"EXTRATO.*TOMATE", "Extrato de tomate", MERCEARIA),
+    # Massa fresca refrigerada: outro produto e outra faixa de preço que o macarrão seco.
+    Regra(
+        r"FETTUCCINE|TALHARIM|GNOCCHI|NHOQUE|RAVIOLI|CAPELETTI|MASSA\s*FRESC|MAS\s*P\/",
+        "Massa fresca",
+        MERCEARIA,
+    ),
     Regra(r"MILHO.*(VER|CONSERVA)|MILHO\s*VERDE", "Milho verde em conserva", MERCEARIA),
     Regra(r"\bERVILHA", "Ervilha em conserva", MERCEARIA),
     Regra(r"\bMAIONESE|\bMAION", "Maionese", MERCEARIA, True, "g"),
@@ -228,7 +268,10 @@ REGRAS: tuple[Regra, ...] = (
     Regra(r"\bMOSTARDA", "Mostarda", MERCEARIA),
     Regra(r"\bVINAGRE", "Vinagre", MERCEARIA, True, "ml"),
     Regra(r"\bGELATINA", "Gelatina em pó", MERCEARIA),
-    Regra(r"\bFARINHA", "Farinha", MERCEARIA, com_tamanho=True),
+    Regra(r"\bFARINHA|\bFAR\s*(TRIG|DE\s*TRIG)", "Farinha", MERCEARIA, True, "kg"),
+    Regra(r"\bGELEIA", "Geleia", MERCEARIA),
+    # Refresco em pó antes do refresco líquido: são produtos e preços diferentes.
+    Regra(r"REFRES.*PO\b|\bTANG\b|SUCO\s*EM\s*PO", "Refresco em pó", MERCEARIA),
     Regra(r"\bFUBA", "Fubá", MERCEARIA),
     Regra(r"\bATUM", "Atum em lata", MERCEARIA),
     Regra(r"\bSARDINHA", "Sardinha em lata", MERCEARIA),
@@ -237,16 +280,30 @@ REGRAS: tuple[Regra, ...] = (
     Regra(r"\bLENTILHA", "Lentilha", MERCEARIA),
     Regra(r"\bGRAO\s*DE\s*BICO", "Grão de bico", MERCEARIA),
     Regra(
-        r"\bLOURO\b|\bOREGANO|\bCOMINHO|\bCOLORIFICO|\bPIMENTA\s*DO\s*REINO|\bTEMPERO",
+        r"\bLOURO\b|\bOREGANO|\bCOMINHO|\bCOLORIFICO|\bPIMENTA\s*DO\s*REINO"
+        r"|\bTEMPERO|^TEM\b",
         "Tempero seco",
         MERCEARIA,
     ),
+    # Tempero vendido a granel (preço por kg) não é comparável com sachê de 7 g:
+    # juntá-los produzia uma "queda de 90%" que era só troca de formato.
+    Regra(r"\bCHIMICHURRI|\bTEMPERO.*\bkg\b", "Tempero a granel", MERCEARIA),
+    Regra(r"(BISC|BISCOITO|BOLACHA).*RECH", "Biscoito recheado", MERCEARIA),
     Regra(r"\bBISCOITO|\bBISC\b|\bBOLACHA", "Biscoito", MERCEARIA),
     # ========================================================= doces e snacks
     Regra(r"\bBOMBOM", "Bombom", DOCES),
     Regra(r"\bCHOC|CHOCOLATE", "Chocolate", DOCES),
+    # Salgadinho de festa vem em pacote de centenas de gramas e custa múltiplas
+    # vezes um chips — produtos distintos, não marcas do mesmo.
+    Regra(r"\bSALG\b|SALGADINHO\s*DE\s*FESTA", "Salgadinho de festa", CONGELADOS),
     Regra(r"\bCHIPS|SALGADIN|BATATA\s*PALHA", "Salgadinho", DOCES),
-    Regra(r"\bPIRULITO|\bBALA\b|\bCHICLETE", "Bala e pirulito", DOCES),
+    Regra(r"\bWAFER", "Wafer", DOCES),
+    Regra(r"\bALFAJOR", "Alfajor", DOCES),
+    Regra(
+        r"\bPIRULITO|\bBALA\b|\bCHICLETE|\bJUJUBA|MARSHMALLOW|\bMAXMALL",
+        "Bala e goma",
+        DOCES,
+    ),
     Regra(r"\bAMENDOIM", "Amendoim", DOCES),
     Regra(r"\bPACOCA|\bPE\s*DE\s*MOLEQUE", "Doce de amendoim", DOCES),
     # ================================================================ bebidas
@@ -254,8 +311,11 @@ REGRAS: tuple[Regra, ...] = (
     Regra(r"AGUA\s*SANITARIA|\bCANDIDA\b|\bQ-?BOA", "Água sanitária", LIMPEZA),
     Regra(r"AGUA\s*(SAB|COM\s*GAS|TONICA)", "Água saborizada", BEBIDAS, True, "ml"),
     Regra(r"\bAGUA\s*(M|MIN)", "Água mineral", BEBIDAS, True, "ml"),
-    Regra(r"\bENERG|\bMONSTER|RED\s*BULL", "Energético", BEBIDAS),
+    # Guaraná e bebida láctea vinham antes marcados como energético só porque a
+    # descrição começa com "ENERG": R$ 1,94 e R$ 9,89 na mesma série de preço.
+    Regra(r"BEBIDA\s*LAC|\bBEB\s*LAC", "Bebida láctea", LATICINIOS),
     Regra(r"GUARAV|GUARAN", "Guaraná", BEBIDAS, True, "ml"),
+    Regra(r"\bENERG|\bMONSTER|RED\s*BULL", "Energético", BEBIDAS),
     Regra(
         r"\bREFRI|\bREFRIG|\bCOCA|\bFANTA|\bSPRITE|\bPEPSI|\bSUKITA",
         "Refrigerante",
@@ -290,25 +350,34 @@ REGRAS: tuple[Regra, ...] = (
     Regra(r"\bAMACIANTE|\bDOWNY|\bCOMFORT", "Amaciante", LIMPEZA, com_tamanho=True),
     Regra(r"\bDESINFETANTE|\bPINHO\b", "Desinfetante", LIMPEZA, com_tamanho=True),
     Regra(r"\bALVEJANTE|\bVANISH", "Alvejante", LIMPEZA),
-    Regra(r"PEDRA\s*SAN", "Pedra sanitária", LIMPEZA),
+    # Pastilha costuma vir em cartela ("leve 5 pague 4"); a pedra é unitária. O preço
+    # de uma cartela contra o de uma pedra não é a mesma série.
+    Regra(r"PAST(ILHA)?\s*SANIT", "Pastilha sanitária", LIMPEZA),
+    Regra(r"PEDRA\s*SAN|BLOCO\s*SANIT", "Pedra sanitária", LIMPEZA),
     Regra(r"\bESPONJA|ESP\s*ANT|\bBOMBRIL|\bPALHA\s*DE\s*ACO", "Esponja", LIMPEZA),
     Regra(r"\bINSETICIDA|\bSBP\b|\bBAYGON", "Inseticida", LIMPEZA),
     Regra(r"\bRODO\b|\bVASSOURA|\bBALDE\b|\bPANO\s*DE", "Utensílio de limpeza", LIMPEZA),
     Regra(r"\bRALO\b|\bRAL\b.*PIA", "Ralo de pia", LIMPEZA),
-    Regra(r"LIMP.*(CASA|MULTI|PERF)|\bMULTIUSO|\bVEJA\b", "Limpador multiuso", LIMPEZA),
+    Regra(r"LIMP.*CREMOSO|\bSAPOLIO", "Limpador cremoso", LIMPEZA),
+    Regra(r"LIMP.*(CASA|MULT|PERF)|\bMULTIUSO|\bVEJA\b", "Limpador multiuso", LIMPEZA),
     # ================================================================ higiene
     # "PAPEL TOALHA" e "PAPEL HIGIENICO" antes de qualquer "PAPEL".
-    Regra(r"PAPEL\s*(TO|TOALHA)", "Papel toalha", DESCARTAVEIS),
-    Regra(r"PAPEL\s*(HIG|HIGIENICO)", "Papel higiênico", HIGIENE),
+    Regra(r"PAPEL\s*(TO|TOALHA)|\bPAP\s*TOA", "Papel toalha", DESCARTAVEIS),
+    Regra(r"PAPEL\s*(HIG|HIGIENICO)|\bPA\s*HIG?\b", "Papel higiênico", HIGIENE),
     Regra(r"SABONETE\s*LIQ|SABON\s*LIQ", "Sabonete líquido", HIGIENE),
     Regra(r"\bSABONETE|\bSABON\b", "Sabonete em barra", HIGIENE, True, "g"),
     Regra(r"^S\s*\+\s*C|SHAMPOO.*CONDIC|CONDIC.*SHAMPOO", "Shampoo e condicionador", HIGIENE),
     Regra(r"\bSHAMPOO|\bXAMPU", "Shampoo", HIGIENE),
     Regra(r"\bCONDICIONADOR", "Condicionador", HIGIENE),
-    Regra(r"CREME\s*DENTAL|PASTA\s*DENTAL|\bCOLGATE|\bSORRISO", "Creme dental", HIGIENE),
-    Regra(r"ESCOVA\s*DENT", "Escova de dente", HIGIENE),
-    Regra(r"\bABSORVENTE", "Absorvente", HIGIENE),
-    Regra(r"\bDESODORANTE|\bDESOD\b", "Desodorante", HIGIENE),
+    Regra(
+        r"CREME\s*DENTAL|PASTA\s*DENTAL|GEL\s*DENT|\bCOLGATE|\bSORRISO|\bCLOSE\s*UP"
+        r"|\bCLOSEUP",
+        "Creme dental",
+        HIGIENE,
+    ),
+    Regra(r"ESCOVA\s*DEN", "Escova de dente", HIGIENE),
+    Regra(r"\bABSORVENTE|\bABS\b", "Absorvente", HIGIENE),
+    Regra(r"\bDESODORANTE|\bDESOD|\bDESO\b", "Desodorante", HIGIENE),
     Regra(r"\bCOTON|\bCOTONETE|HASTE\s*FLEX", "Cotonete", HIGIENE),
     Regra(r"DISCO.*ALGO|ALGODAO", "Algodão", HIGIENE),
     Regra(r"\bTINTURA|\bCOLORACAO|\bKOLESTON", "Tintura de cabelo", HIGIENE),
@@ -325,7 +394,10 @@ REGRAS: tuple[Regra, ...] = (
     Regra(r"FILME\s*(PVC|PLAST)|PAPEL\s*ALUM", "Filme e alumínio", DESCARTAVEIS),
     Regra(r"\bFOSFORO|\bVELA\b", "Fósforo e vela", DESCARTAVEIS),
     # ==================================================================== pet
-    Regra(r"RACAO.*(GATO|WHISKAS|FELIN)|AREIA.*GATO", "Ração para gato", PET),
+    # Sachê e ração seca diferem em uma ordem de magnitude de preço por unidade.
+    Regra(r"RACAO.*SACHE|SACHE.*(GATO|CAO)", "Ração em sachê", PET),
+    Regra(r"AREIA.*GATO", "Areia para gato", PET),
+    Regra(r"RACAO.*(GATO|WHISKAS|FELIN)", "Ração seca para gato", PET),
     Regra(r"RACAO.*(CAO|CACHORRO|PEDIGREE|DOG)", "Ração para cão", PET),
     Regra(r"\bRACAO", "Ração", PET),
 )
