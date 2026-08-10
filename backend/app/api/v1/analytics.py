@@ -56,6 +56,50 @@ async def resumo_gastos(
     return await analytics.resumo_mensal(sessao, desde=desde, ate=ate)
 
 
+@router.get("/categorias")
+async def gasto_por_categoria(
+    desde: date | None = None,
+    ate: date | None = None,
+    sessao: AsyncSession = Depends(get_session),
+) -> list[dict[str, object]]:
+    """Gasto por categoria, com a fatia percentual de cada uma."""
+    return await analytics.gasto_por_categoria(sessao, desde=desde, ate=ate)
+
+
+@router.get("/categorias/evolucao")
+async def evolucao_por_categoria(
+    desde: date | None = None,
+    ate: date | None = None,
+    limite: int = Query(
+        7,
+        ge=3,
+        le=8,
+        description=(
+            "Quantas categorias manter separadas; o resto vira 'Outras'. O teto de 8 "
+            "não é arbitrário: acima disso as cores deixam de ser distinguíveis."
+        ),
+    ),
+    sessao: AsyncSession = Depends(get_session),
+) -> dict[str, object]:
+    """Gasto por categoria mês a mês, pronto para barra empilhada."""
+    return await analytics.evolucao_por_categoria(
+        sessao, desde=desde, ate=ate, limite_categorias=limite
+    )
+
+
+@router.get("/categorias/{categoria}/produtos")
+async def produtos_da_categoria(
+    categoria: str,
+    desde: date | None = None,
+    ate: date | None = None,
+    sessao: AsyncSession = Depends(get_session),
+) -> list[dict[str, object]]:
+    """Detalhamento: os produtos de uma categoria, do maior gasto para o menor."""
+    return await analytics.produtos_da_categoria(
+        sessao, categoria, desde=desde, ate=ate
+    )
+
+
 @router.get("/totais")
 async def totais(sessao: AsyncSession = Depends(get_session)) -> dict[str, object]:
     """Números do topo do dashboard, incluindo quantos itens aguardam revisão."""

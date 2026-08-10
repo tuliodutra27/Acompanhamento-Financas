@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { GraficoBarras } from "../components/GraficoBarras";
-import type { LinhaRanking, Totais } from "../api/client";
+import { GraficoComposicao } from "../components/GraficoComposicao";
+import type { FatiaCategoria, LinhaRanking, Totais } from "../api/client";
 import { api, mesLegivel, moeda } from "../api/client";
 
 interface ResumoMes {
@@ -18,20 +19,23 @@ export function Dashboard() {
   const [totais, setTotais] = useState<Totais | null>(null);
   const [ranking, setRanking] = useState<LinhaRanking[]>([]);
   const [meses, setMeses] = useState<ResumoMes[]>([]);
+  const [categorias, setCategorias] = useState<FatiaCategoria[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
       try {
-        const [t, r, m] = await Promise.all([
+        const [t, r, m, c] = await Promise.all([
           api.totais(),
           api.ranking(10),
           api.resumoMensal(),
+          api.categorias(),
         ]);
         setTotais(t);
         setRanking(r);
         setMeses(m);
+        setCategorias(c);
       } catch {
         setErro("Não foi possível carregar os dados. O servidor está no ar?");
       } finally {
@@ -120,6 +124,20 @@ export function Dashboard() {
                 <Link to="/produtos">Classificar agora</Link>
               </span>
             </div>
+          )}
+
+          {categorias.length > 0 && (
+            <section className="cartao">
+              <h2>Para onde vai o dinheiro</h2>
+              <p className="legenda">
+                Composição por categoria.{" "}
+                <Link to="/categorias">Ver em detalhe →</Link>
+              </p>
+              <GraficoComposicao
+                dados={categorias}
+                aoClicar={() => navegar("/categorias")}
+              />
+            </section>
           )}
 
           <section className="cartao">

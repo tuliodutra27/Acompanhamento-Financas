@@ -1,10 +1,15 @@
 /* Tokens e estilos do app.
  *
- * Cores de dados: hue única (azul) da paleta de referência de dataviz — todos os
- * gráficos aqui são de série única (evolução de preço, total por mês, ranking de
- * gasto), então não há mistura de categorias para desambiguar. Os passos claro/escuro
- * são os documentados como aprovados nos dois modos, não uma inversão automática.
- */
+ * Cores de dados, em dois grupos com papéis distintos:
+ *
+ * - `--serie-1*`: hue única (azul), para os gráficos onde a cor **não identifica
+ *   nada** — evolução de preço, total por mês, ranking de gasto. Nesses, a cor só
+ *   desenha magnitude, então uma cor basta e não há legenda a explicar.
+ * - `--cat-1..8`: paleta categórica, usada só onde a cor **identifica uma entidade**
+ *   (as categorias de gasto). Aí a legenda é obrigatória.
+ *
+ * Os passos claro/escuro de ambos são os documentados como aprovados nos dois modos,
+ * não uma inversão automática. */
 
 :root {
   color-scheme: light;
@@ -24,6 +29,21 @@
   --serie-1: #2a78d6;
   --serie-1-faixa: #b7d3f6; /* mesmo hue, passo claro — a faixa min/max */
   --serie-1-fraco: #cde2fb;
+
+  /* Paleta categórica: usada só onde a cor identifica uma entidade (categoria de
+     gasto). A ordem dos slots é a validada para separação em daltonismo entre pares
+     vizinhos — não reordenar. Oito é o teto: uma nona cor gerada seria
+     indistinguível de alguma destas. Por isso o backend dobra a cauda em "Outras",
+     que recebe cinza (não é uma entidade, é um resto). */
+  --cat-1: #2a78d6;
+  --cat-2: #eb6834;
+  --cat-3: #1baf7a;
+  --cat-4: #eda100;
+  --cat-5: #e87ba4;
+  --cat-6: #008300;
+  --cat-7: #4a3aa7;
+  --cat-8: #e34948;
+  --cat-outras: #898781;
 
   --bom: #0ca30c;
   --atencao: #fab219;
@@ -55,6 +75,18 @@
     --serie-1-faixa: #1c5cab;
     --serie-1-fraco: #184f95;
 
+    /* Os mesmos oito hues, repassados para a superfície escura — não é inversão
+       automática: cada passo foi escolhido para a faixa escura. */
+    --cat-1: #3987e5;
+    --cat-2: #d95926;
+    --cat-3: #199e70;
+    --cat-4: #c98500;
+    --cat-5: #d55181;
+    --cat-6: #008300;
+    --cat-7: #9085e9;
+    --cat-8: #e66767;
+    --cat-outras: #898781;
+
     --sucesso-texto: #0ca30c;
     --sombra: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
   }
@@ -78,6 +110,16 @@
   --serie-1: #3987e5;
   --serie-1-faixa: #1c5cab;
   --serie-1-fraco: #184f95;
+
+  --cat-1: #3987e5;
+  --cat-2: #d95926;
+  --cat-3: #199e70;
+  --cat-4: #c98500;
+  --cat-5: #d55181;
+  --cat-6: #008300;
+  --cat-7: #9085e9;
+  --cat-8: #e66767;
+  --cat-outras: #898781;
 
   --sucesso-texto: #0ca30c;
   --sombra: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.3);
@@ -288,6 +330,108 @@ figcaption {
 
 .envelope-grafico {
   position: relative;
+}
+
+/* ------------------------------------------------- barra de composição (share) */
+
+/* Vão de 2px na cor da superfície entre segmentos: sem ele, duas categorias de tom
+   próximo viram um bloco só e a fronteira desaparece. */
+.barra-composicao {
+  display: flex;
+  width: 100%;
+  height: 34px;
+  border-radius: 6px;
+  overflow: hidden;
+  gap: 2px;
+  background: var(--surface-2);
+}
+
+.barra-composicao > span {
+  display: block;
+  height: 100%;
+  transition: opacity 120ms;
+}
+
+/* --------------------------------------------------- colunas empilhadas por mês */
+
+.colunas-mes {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.colunas-mes .coluna {
+  flex: 1 0 44px;
+  min-width: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* Altura fixa e escala compartilhada entre os meses: é o que permite comparar o
+   tamanho absoluto de um mês com o outro, em vez de normalizar tudo em 100%. */
+.colunas-mes .pilha {
+  width: 100%;
+  height: 170px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.colunas-mes .pilha > span {
+  display: block;
+  width: 100%;
+  min-height: 2px;
+}
+
+.colunas-mes .rotulo-mes {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.colunas-mes .total-mes {
+  font-size: 0.68rem;
+  font-weight: 620;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------- legenda */
+
+/* Presente sempre que a cor identifica algo — a identidade nunca fica só na cor:
+   cada verbete traz o nome e o valor em texto. */
+.legenda-cores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.9rem;
+  margin-top: 0.8rem;
+  font-size: 0.78rem;
+}
+
+.legenda-cores > li {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: default;
+}
+
+.legenda-cores .marca {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.legenda-cores .valor {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ---------------------------------------------------------------- controles */

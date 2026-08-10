@@ -128,6 +128,28 @@ export interface LinhaRanking {
   n_compras: number;
 }
 
+export interface FatiaCategoria {
+  categoria: string;
+  total_gasto: number;
+  n_itens: number;
+  n_produtos: number;
+  fatia: number;
+}
+
+export interface EvolucaoCategorias {
+  meses: string[];
+  categorias: { categoria: string; total: number; valores: number[] }[];
+  agrupadas_em_outras: string[];
+}
+
+export interface ProdutoDaCategoria {
+  produto_id: number;
+  nome: string;
+  total_gasto: number;
+  n_compras: number;
+  preco_medio: number;
+}
+
 export interface Totais {
   total_gasto: number;
   n_notas: number;
@@ -270,6 +292,18 @@ export const api = {
     ),
 
   totais: () => requisitar<Totais>("/analytics/totais"),
+
+  categorias: () => requisitar<FatiaCategoria[]>("/analytics/categorias"),
+
+  evolucaoCategorias: (limite = 7) =>
+    requisitar<EvolucaoCategorias>(
+      `/analytics/categorias/evolucao?limite=${limite}`,
+    ),
+
+  produtosDaCategoria: (categoria: string) =>
+    requisitar<ProdutoDaCategoria[]>(
+      `/analytics/categorias/${encodeURIComponent(categoria)}/produtos`,
+    ),
 };
 
 export function moeda(valor: number | string | null | undefined): string {

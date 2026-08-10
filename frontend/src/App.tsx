@@ -1,5 +1,6 @@
 import { NavLink, Route, Routes } from "react-router-dom";
 import { AdicionarNota } from "./routes/AdicionarNota";
+import { Categorias } from "./routes/Categorias";
 import { Dashboard } from "./routes/Dashboard";
 import { Importar } from "./routes/Importar";
 import { Notas } from "./routes/Notas";
@@ -10,6 +11,7 @@ import { RevisaoNota } from "./routes/RevisaoNota";
 const abas = [
   { para: "/", icone: "📊", texto: "Painel" },
   { para: "/adicionar", icone: "📷", texto: "Nova nota" },
+  { para: "/categorias", icone: "🗂️", texto: "Categorias" },
   { para: "/produtos", icone: "🏷️", texto: "Produtos" },
   { para: "/notas", icone: "🧾", texto: "Notas" },
 ];
@@ -22,6 +24,7 @@ export function App() {
           <Route path="/" element={<Dashboard />} />
           <Route path="/adicionar" element={<AdicionarNota />} />
           <Route path="/importar" element={<Importar />} />
+          <Route path="/categorias" element={<Categorias />} />
           <Route path="/notas" element={<Notas />} />
           <Route path="/notas/:id" element={<RevisaoNota />} />
           <Route path="/produtos" element={<Produtos />} />

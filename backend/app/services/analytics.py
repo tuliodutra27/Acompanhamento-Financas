@@ -184,6 +184,155 @@ async def variacao_preco(
     }
 
 
+async def gasto_por_categoria(
+    sessao: AsyncSession, *, desde: date | None = None, ate: date | None = None
+) -> list[dict[str, object]]:
+    """Gasto por categoria — "onde vai meu dinheiro" em nível de grupo.
+
+    Itens sem produto vinculado ficam fora: não têm categoria, e somá-los num
+    "sem categoria" competindo com Carnes daria a impressão de que existe uma despesa
+    com esse nome. Eles aparecem como pendência no painel, que é o lugar certo.
+    """
+    # A expressão é construída UMA vez e reusada no SELECT e no GROUP BY. Escrevê-la
+    # duas vezes gera dois bind params distintos ($1 e $2), e o Postgres então trata as
+    # duas como expressões diferentes e recusa com "must appear in the GROUP BY clause".
+    categoria = func.coalesce(Produto.categoria, "Sem categoria")
+
+    consulta = (
+        select(
+            categoria.label("categoria"),
+            func.sum(ItemNota.valor_total).label("total_gasto"),
+            func.count(ItemNota.id).label("n_itens"),
+            func.count(func.distinct(Produto.id)).label("n_produtos"),
+        )
+        .select_from(ItemNota)
+        .join(Produto, Produto.id == ItemNota.produto_id)
+        .join(NotaFiscal, NotaFiscal.id == ItemNota.nota_id)
+        .group_by(categoria)
+        .order_by(func.sum(ItemNota.valor_total).desc())
+    )
+
+    resultado = await sessao.execute(_filtro_periodo(consulta, desde, ate))
+    linhas = [
+        {
+            "categoria": linha.categoria,
+            "total_gasto": float(linha.total_gasto or 0),
+            "n_itens": int(linha.n_itens or 0),
+            "n_produtos": int(linha.n_produtos or 0),
+        }
+        for linha in resultado
+    ]
+
+    # A fatia percentual é calculada aqui, e não no cliente, para que todas as telas
+    # concordem sobre o denominador.
+    total = sum(linha["total_gasto"] for linha in linhas) or 1.0
+    for linha in linhas:
+        linha["fatia"] = round(linha["total_gasto"] / total * 100, 1)
+
+    return linhas
+
+
+async def evolucao_por_categoria(
+    sessao: AsyncSession,
+    *,
+    desde: date | None = None,
+    ate: date | None = None,
+    limite_categorias: int = 7,
+) -> dict[str, object]:
+    """Gasto por categoria, mês a mês, em formato pronto para barra empilhada.
+
+    As categorias além de ``limite_categorias`` são somadas em "Outras". Isso não é
+    economia de espaço: uma paleta categórica legível tem cerca de 8 cores, e gerar
+    mais tons produz pares que ninguém distingue — muito menos quem tem daltonismo.
+    Dobrar a cauda numa fatia só é o que mantém o gráfico honesto.
+    """
+    mes = _data_da_compra().label("mes")
+    categoria = func.coalesce(Produto.categoria, "Sem categoria").label("categoria")
+
+    consulta = (
+        select(mes, categoria, func.sum(ItemNota.valor_total).label("total"))
+        .select_from(ItemNota)
+        .join(Produto, Produto.id == ItemNota.produto_id)
+        .join(NotaFiscal, NotaFiscal.id == ItemNota.nota_id)
+        .group_by(mes, categoria)
+        .order_by(mes)
+    )
+
+    resultado = (await sessao.execute(_filtro_periodo(consulta, desde, ate))).all()
+
+    def rotulo_mes(valor) -> str:
+        return valor.date().isoformat() if hasattr(valor, "date") else str(valor)
+
+    meses = sorted({rotulo_mes(linha.mes) for linha in resultado})
+
+    total_por_categoria: dict[str, float] = {}
+    for linha in resultado:
+        total_por_categoria[linha.categoria] = total_por_categoria.get(
+            linha.categoria, 0.0
+        ) + float(linha.total or 0)
+
+    ordenadas = sorted(total_por_categoria, key=total_por_categoria.get, reverse=True)
+    principais = ordenadas[:limite_categorias]
+    agrupar_em_outras = set(ordenadas[limite_categorias:])
+
+    nomes = principais + (["Outras"] if agrupar_em_outras else [])
+    valores: dict[str, dict[str, float]] = {nome: dict.fromkeys(meses, 0.0) for nome in nomes}
+
+    for linha in resultado:
+        nome = "Outras" if linha.categoria in agrupar_em_outras else linha.categoria
+        valores[nome][rotulo_mes(linha.mes)] += float(linha.total or 0)
+
+    return {
+        "meses": meses,
+        "categorias": [
+            {
+                "categoria": nome,
+                "total": round(sum(valores[nome].values()), 2),
+                "valores": [round(valores[nome][m], 2) for m in meses],
+            }
+            for nome in nomes
+        ],
+        "agrupadas_em_outras": sorted(agrupar_em_outras),
+    }
+
+
+async def produtos_da_categoria(
+    sessao: AsyncSession,
+    categoria: str,
+    *,
+    desde: date | None = None,
+    ate: date | None = None,
+) -> list[dict[str, object]]:
+    """Produtos de uma categoria, do maior gasto para o menor — o detalhamento."""
+    consulta = (
+        select(
+            Produto.id,
+            Produto.nome,
+            func.sum(ItemNota.valor_total).label("total_gasto"),
+            func.count(ItemNota.id).label("n_compras"),
+            func.avg(ItemNota.valor_unitario).label("preco_medio"),
+        )
+        .select_from(ItemNota)
+        .join(Produto, Produto.id == ItemNota.produto_id)
+        .join(NotaFiscal, NotaFiscal.id == ItemNota.nota_id)
+        .where(func.coalesce(Produto.categoria, "Sem categoria") == categoria)
+        .group_by(Produto.id, Produto.nome)
+        .order_by(func.sum(ItemNota.valor_total).desc())
+    )
+
+    resultado = await sessao.execute(_filtro_periodo(consulta, desde, ate))
+    return [
+        {
+            "produto_id": linha.id,
+            "nome": linha.nome,
+            "total_gasto": float(linha.total_gasto or 0),
+            "n_compras": int(linha.n_compras or 0),
+            "preco_medio": float(linha.preco_medio or 0),
+        }
+        for linha in resultado
+    ]
+
+
 async def totais_gerais(sessao: AsyncSession) -> dict[str, object]:
     """Números do topo do dashboard."""
     total_gasto = await sessao.scalar(
