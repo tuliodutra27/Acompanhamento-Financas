@@ -402,6 +402,59 @@ figcaption {
   white-space: nowrap;
 }
 
+/* ------------------------------------------- barras divergentes (índice) */
+
+.indice-barras {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.indice-linha {
+  display: grid;
+  grid-template-columns: 4.5rem 1fr 4.2rem auto;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.indice-rotulo {
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* A trilha existe para a linha do zero ficar no mesmo lugar em todas as barras —
+   é dela que a leitura de "acima ou abaixo" depende. */
+.indice-trilha {
+  position: relative;
+  height: 20px;
+  background: var(--surface-2);
+  border-radius: 4px;
+}
+
+.indice-zero {
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: var(--axis);
+}
+
+.indice-barra {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 3px;
+  transition: opacity 120ms;
+}
+
+.indice-valor {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* ------------------------------------------------------------------- legenda */
 
 /* Presente sempre que a cor identifica algo — a identidade nunca fica só na cor:

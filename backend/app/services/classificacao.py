@@ -106,7 +106,11 @@ REGRAS: tuple[Regra, ...] = (
     Regra(r"MOL\s*TOM|MOLHO.*TOMATE", "Molho de tomate", MERCEARIA),
     Regra(r"TOMATE\s*SECO", "Tomate seco", MERCEARIA),
     # ================================================================= carnes
-    Regra(r"\bMOID", "Carne moída", CARNES, separar_granel=True),
+    # Sem `separar_granel`: carne moída é sempre vendida por peso, e o lojista escreve
+    # "kg" de forma inconsistente na descrição. A flag olha o texto, não a unidade real,
+    # então aqui ela partia um produto genuinamente recorrente (6/6 meses) em dois de
+    # 3/6 — "Carne moída" e "Carne moída a granel". A variância que sobra é preço mesmo.
+    Regra(r"\bMOID", "Carne moída", CARNES),
     Regra(r"\bALCAT", "Alcatra", CARNES),
     Regra(r"\bMAMINHA|\bMAM\b", "Maminha", CARNES),
     Regra(r"\bPICANHA", "Picanha", CARNES),

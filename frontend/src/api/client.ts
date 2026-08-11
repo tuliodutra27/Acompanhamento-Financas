@@ -150,6 +150,70 @@ export interface ProdutoDaCategoria {
   preco_medio: number;
 }
 
+export interface ContribuicaoIndice {
+  produto_id: number;
+  nome: string;
+  preco_base: number;
+  preco_novo: number;
+  pontos_percentuais: number;
+}
+
+export interface IndiceCesta {
+  mes_base: string;
+  mes: string;
+  variacao_percentual: number;
+  cobertura: number;
+  confianca: "alta" | "media" | "baixa";
+  produtos_comparados: number;
+  produtos_no_mes_base: number;
+  maiores_altas: ContribuicaoIndice[];
+  maiores_quedas: ContribuicaoIndice[];
+}
+
+export interface AlertaPreco {
+  item_id: number;
+  nota_id: number;
+  produto_id: number;
+  nome: string;
+  descricao_origem: string;
+  unidade: string | null;
+  preco_pago: number;
+  preco_usual: number;
+  acima_percentual: number;
+  data: string | null;
+  compras_anteriores: number;
+}
+
+export interface ProdutoRecorrente {
+  produto_id: number;
+  nome: string;
+  categoria: string | null;
+  meses: number;
+  compras: number;
+  gasto: number;
+}
+
+export interface Recorrencia {
+  total_meses: number;
+  recorrentes: ProdutoRecorrente[];
+  frequentes: ProdutoRecorrente[];
+  eventuais: ProdutoRecorrente[];
+  gasto_recorrente: number;
+  gasto_eventual: number;
+}
+
+export interface GrupoSuspeito {
+  produto_id: number;
+  nome: string;
+  categoria: string | null;
+  n_itens: number;
+  n_descricoes: number;
+  menor_preco: number;
+  maior_preco: number;
+  motivos: string[];
+  gravidade: "alta" | "media";
+}
+
 export interface Totais {
   total_gasto: number;
   n_notas: number;
@@ -304,6 +368,16 @@ export const api = {
     requisitar<ProdutoDaCategoria[]>(
       `/analytics/categorias/${encodeURIComponent(categoria)}/produtos`,
     ),
+
+  indiceCesta: () => requisitar<IndiceCesta[]>("/analytics/inflacao-cesta"),
+
+  alertasPreco: (limite = 15) =>
+    requisitar<AlertaPreco[]>(`/analytics/alertas-preco?limite=${limite}`),
+
+  recorrencia: () => requisitar<Recorrencia>("/analytics/recorrencia"),
+
+  gruposSuspeitos: () =>
+    requisitar<GrupoSuspeito[]>("/analytics/grupos-suspeitos"),
 };
 
 export function moeda(valor: number | string | null | undefined): string {

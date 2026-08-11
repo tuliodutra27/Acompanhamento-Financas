@@ -478,14 +478,18 @@ async def inflacao_cesta(sessao: AsyncSession) -> list[dict[str, object]]:
 async def alertas_preco(
     sessao: AsyncSession, *, limite_percentual: float = 15.0, minimo_compras: int = 3
 ) -> list[dict[str, object]]:
-    """Itens comprados acima do preço que você costuma pagar naquele produto.
+    """Itens comprados acima do preço que você vinha pagando naquele produto.
 
-    Compara o preço de cada item com a **mediana** das outras compras do mesmo produto
-    — mediana e não média porque uma única compra atípica distorce a média e geraria
-    alerta sobre si mesma.
+    Compara com a **mediana das compras anteriores** — três decisões, cada uma
+    corrigindo um jeito de o alerta mentir:
 
-    ``minimo_compras`` existe porque "o preço usual" não significa nada com uma ou duas
-    observações: abaixo disso o alerta seria ruído com aparência de informação.
+    - **mediana, não média**: uma compra atípica distorce a média e geraria alerta
+      sobre si mesma;
+    - **só compras anteriores à data**: usar todo o histórico embutia viés de
+      look-ahead, e meses antigos acumulavam alertas apenas por serem comparados a
+      preços que ainda não existiam;
+    - **mínimo de compras**: "o preço usual" não significa nada com uma ou duas
+      observações — abaixo disso o alerta é ruído com aparência de informação.
     """
     consulta = (
         select(
@@ -510,25 +514,36 @@ async def alertas_preco(
     for linha in linhas:
         por_produto.setdefault(linha.produto_id, []).append(linha)
 
+    def mediana(valores: list[float]) -> float:
+        meio = len(valores) // 2
+        return (
+            valores[meio]
+            if len(valores) % 2
+            else (valores[meio - 1] + valores[meio]) / 2
+        )
+
     alertas = []
     for itens in por_produto.values():
         if len(itens) < minimo_compras:
             continue
 
-        for item in itens:
-            # Mediana das OUTRAS compras: incluir a própria faria o item puxar o
-            # referencial na direção dele e amortecer o próprio desvio.
-            outros = sorted(
-                float(o.valor_unitario) for o in itens if o.id != item.id
+        # Ordem cronológica: o "preço usual" de uma compra só pode usar o que já
+        # tinha acontecido até então.
+        itens = sorted(itens, key=lambda i: (i.data is None, i.data))
+
+        for posicao, item in enumerate(itens):
+            # **Só compras anteriores.** A primeira versão usava a mediana de todo o
+            # histórico, inclusive de compras posteriores — o que produzia um viés
+            # visível: meses antigos acumulavam alertas por serem comparados a preços
+            # que ainda não existiam. Aqui a pergunta é a certa: "no dia da compra,
+            # este preço estava acima do que eu vinha pagando?".
+            anteriores = sorted(
+                float(o.valor_unitario) for o in itens[:posicao]
             )
-            if len(outros) < 2:
+            if len(anteriores) < minimo_compras - 1:
                 continue
-            meio = len(outros) // 2
-            usual = (
-                outros[meio]
-                if len(outros) % 2
-                else (outros[meio - 1] + outros[meio]) / 2
-            )
+
+            usual = mediana(anteriores)
             if usual <= 0:
                 continue
 
@@ -549,7 +564,7 @@ async def alertas_preco(
                     "preco_usual": round(usual, 2),
                     "acima_percentual": round(desvio, 1),
                     "data": item.data.date().isoformat() if item.data else None,
-                    "n_compras": len(itens),
+                    "compras_anteriores": len(anteriores),
                 }
             )
 
