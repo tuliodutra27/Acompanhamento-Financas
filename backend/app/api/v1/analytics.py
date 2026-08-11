@@ -100,6 +100,40 @@ async def produtos_da_categoria(
     )
 
 
+@router.get("/inflacao-cesta")
+async def inflacao_cesta(
+    sessao: AsyncSession = Depends(get_session),
+) -> list[dict[str, object]]:
+    """Índice de preços da sua cesta, mês a mês (Laspeyres), com cobertura.
+
+    Diferente de comparar o total gasto: isola a variação de **preço** da variação do
+    que foi comprado. Ver a docstring do serviço para o cálculo e as limitações.
+    """
+    return await analytics.inflacao_cesta(sessao)
+
+
+@router.get("/alertas-preco")
+async def alertas_preco(
+    limite: float = Query(
+        15.0, ge=5.0, description="Quantos %% acima do usual para gerar alerta"
+    ),
+    minimo_compras: int = Query(
+        3, ge=2, description="Mínimo de compras do produto para haver 'preço usual'"
+    ),
+    sessao: AsyncSession = Depends(get_session),
+) -> list[dict[str, object]]:
+    """Itens pagos acima da mediana histórica daquele produto."""
+    return await analytics.alertas_preco(
+        sessao, limite_percentual=limite, minimo_compras=minimo_compras
+    )
+
+
+@router.get("/recorrencia")
+async def recorrencia(sessao: AsyncSession = Depends(get_session)) -> dict[str, object]:
+    """Produtos recorrentes, frequentes e eventuais, com o gasto de cada grupo."""
+    return await analytics.recorrencia_produtos(sessao)
+
+
 @router.get("/grupos-suspeitos")
 async def grupos_suspeitos(
     fator_preco: float = Query(

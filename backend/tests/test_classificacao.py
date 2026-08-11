@@ -102,7 +102,7 @@ class TestOrdemDasRegras:
             ("AGUA M MARCA 500ML", "Água mineral 500ml", "Bebidas"),
             # "BOLO ... CHOC" é bolo, não chocolate
             ("BOLO 350G CHOC GRAN", "Bolo", "Padaria"),
-            ("CHOC BARRA 90G AO L", "Chocolate", "Doces e snacks"),
+            ("CHOC BARRA 90G AO L", "Chocolate 90g", "Doces e snacks"),
             # "SABONETE LIQ" antes de sabonete em barra
             ("SABONETE LIQ MARCA", "Sabonete líquido", "Higiene"),
             ("SABON MARCA 85G ROSA", "Sabonete em barra 85g", "Higiene"),
@@ -123,7 +123,7 @@ class TestOrdemDasRegras:
             ("ABOBRINHA kg GRANEL", "Abobrinha", "Hortifruti"),
             ("ABOB MADU kg PROCESS", "Abóbora", "Hortifruti"),
             # azeitona antes de azeite
-            ("AZEITONA VERDE kg FA", "Azeitona", "Mercearia"),
+            ("AZEITONA VERDE kg FA", "Azeitona a granel", "Mercearia"),
             ("AZE MARCA 500ML", "Azeite 500ml", "Mercearia"),
             # refresco em pó antes do líquido
             ("REFRES PO TANG 18G L", "Refresco em pó", "Mercearia"),
@@ -169,6 +169,39 @@ class TestOrdemDasRegras:
     @pytest.mark.parametrize(
         ("descricao", "nome_esperado", "categoria_esperada"),
         [
+            # Nome de fruta em descrição longa é SABOR, não o produto. Este erro só
+            # apareceu quando notas com descrição completa (não truncada em 20
+            # caracteres) entraram no banco — e produziu "alertas de preço" absurdos,
+            # tipo morango a R$ 74 (que era bombom a granel).
+            ("AGUA SABORIZADA CRYSTAL 510ML LIMAO", "Água saborizada 510ml", "Bebidas"),
+            ("GELATINA APTI 20G MORANGO", "Gelatina em pó", "Mercearia"),
+            ("DETERGENTE LIMPOL 500ML MACA", "Detergente de louça", "Limpeza"),
+            ("BOMBOM DA CASA kg MORANGO", "Bombom a granel", "Doces e snacks"),
+            ("BISCOITO RECH.PIRAQUE 160G LIMAO", "Biscoito recheado", "Mercearia"),
+            ("REFRESCO EM PO MID 20G LIMAO", "Refresco em pó", "Mercearia"),
+            ("IOGURTE LIQ.ITAMBE FIT 1150G MORANGO", "Iogurte 1150g", "Frios e laticínios"),
+            ("LAVA LOUCAS GEL LIMPOL 400G LIMAO/VERBENA", "Lava-louças 400g", "Limpeza"),
+            # A fruta de verdade lidera a descrição — é assim que o cupom a nomeia.
+            ("LIMAO kg GRANEL", "Limão", "Hortifruti"),
+            ("MORANGO SELECIONADO", "Morango", "Hortifruti"),
+            ("MACA kg RED GRANEL", "Maçã", "Hortifruti"),
+            ("TOMATE kg GRANEL", "Tomate", "Hortifruti"),
+            # Marca com "LA" não faz de um queijo em peça um queijo ralado.
+            (
+                "QUEIJO MUCARELA LA PAULINA kg PEDACO",
+                "Queijo muçarela",
+                "Frios e laticínios",
+            ),
+        ],
+    )
+    def test_sabor_nao_e_produto(self, descricao, nome_esperado, categoria_esperada):
+        achado = classificado(descricao)
+        assert achado.nome == nome_esperado
+        assert achado.categoria == categoria_esperada
+
+    @pytest.mark.parametrize(
+        ("descricao", "nome_esperado", "categoria_esperada"),
+        [
             # Cada um destes foi encontrado pelo diagnóstico de grupos suspeitos, depois
             # de já estar classificado errado no banco — misturando produtos cujo preço
             # não é comparável.
@@ -176,7 +209,7 @@ class TestOrdemDasRegras:
             ("TOMATE kg GRANEL", "Tomate", "Hortifruti"),
             ("BATATA BEM BRASIL 1,", "Batata congelada", "Congelados"),
             ("BATATA FROSTO 1kg CO", "Batata congelada", "Congelados"),
-            ("BATATA INGLESA kg GR", "Batata inglesa", "Hortifruti"),
+            ("BATATA INGLESA kg GR", "Batata inglesa a granel", "Hortifruti"),
             ("ENERG GUARAVITON 300", "Guaraná 300ml", "Bebidas"),
             ("ENERG MONSTER 473ML", "Energético", "Bebidas"),
             ("BEBIDA LAC ENERGIA", "Bebida láctea", "Frios e laticínios"),

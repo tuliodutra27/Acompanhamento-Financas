@@ -333,6 +333,285 @@ async def produtos_da_categoria(
     ]
 
 
+async def _preco_e_quantidade_por_mes(
+    sessao: AsyncSession,
+) -> dict[str, dict[int, dict[str, float]]]:
+    """``{mes: {produto_id: {nome, quantidade, preco, gasto}}}`` — base dos índices.
+
+    O preço aqui é o **preço médio ponderado pelo volume** (gasto ÷ quantidade), não a
+    média das linhas: comprar 0,2 kg a R$ 60 e 2 kg a R$ 40 tem preço médio de R$ 41,8
+    e não R$ 50. Para um índice de preços a ponderação certa é a primeira.
+    """
+    mes = _data_da_compra().label("mes")
+    consulta = (
+        select(
+            mes,
+            Produto.id.label("produto_id"),
+            Produto.nome.label("nome"),
+            func.sum(ItemNota.quantidade).label("quantidade"),
+            func.sum(ItemNota.valor_total).label("gasto"),
+        )
+        .select_from(ItemNota)
+        .join(Produto, Produto.id == ItemNota.produto_id)
+        .join(NotaFiscal, NotaFiscal.id == ItemNota.nota_id)
+        .group_by(mes, Produto.id, Produto.nome)
+    )
+
+    por_mes: dict[str, dict[int, dict[str, float]]] = {}
+    for linha in await sessao.execute(consulta):
+        chave = (
+            linha.mes.date().isoformat()
+            if hasattr(linha.mes, "date")
+            else str(linha.mes)
+        )
+        quantidade = float(linha.quantidade or 0)
+        gasto = float(linha.gasto or 0)
+        if quantidade <= 0:
+            continue
+        por_mes.setdefault(chave, {})[linha.produto_id] = {
+            "nome": linha.nome,
+            "quantidade": quantidade,
+            "gasto": gasto,
+            "preco": gasto / quantidade,
+        }
+    return por_mes
+
+
+async def inflacao_cesta(sessao: AsyncSession) -> list[dict[str, object]]:
+    """Índice de preços da **sua** cesta, de um mês para o outro.
+
+    Por que não basta comparar o total gasto: o total mistura duas coisas diferentes —
+    mudança de preço e mudança do que (e de quanto) você comprou. Gastar 10% mais pode
+    ser inflação ou pode ser que você levou mais carne naquele mês.
+
+    Este cálculo isola o preço. É um índice de Laspeyres: pega a cesta do mês-base
+    (as quantidades que você realmente comprou) e a reavalia aos preços do mês seguinte.
+
+        índice = Σ(quantidade_base × preço_novo) / Σ(quantidade_base × preço_base)
+
+    Só entram produtos presentes nos **dois** meses — não há preço novo para comparar
+    nos demais. Por isso vem acompanhado de ``cobertura``: a fatia do gasto do mês-base
+    que o índice de fato representa. Um índice com 30% de cobertura diz pouco, e omitir
+    esse número deixaria o resultado parecer mais sólido do que é.
+    """
+    por_mes = await _preco_e_quantidade_por_mes(sessao)
+    meses = sorted(por_mes)
+    resultado: list[dict[str, object]] = []
+
+    for base, seguinte in zip(meses, meses[1:], strict=False):
+        cesta_base = por_mes[base]
+        cesta_nova = por_mes[seguinte]
+        comuns = set(cesta_base) & set(cesta_nova)
+
+        gasto_base_total = sum(p["gasto"] for p in cesta_base.values())
+        if not comuns or gasto_base_total <= 0:
+            continue
+
+        custo_antigo = sum(
+            cesta_base[i]["quantidade"] * cesta_base[i]["preco"] for i in comuns
+        )
+        custo_novo = sum(
+            cesta_base[i]["quantidade"] * cesta_nova[i]["preco"] for i in comuns
+        )
+        if custo_antigo <= 0:
+            continue
+
+        variacao = (custo_novo / custo_antigo - 1) * 100
+
+        # Contribuição de cada produto para a variação total, em pontos percentuais.
+        # É o que responde "o que puxou o índice", em vez de só dar o número final.
+        contribuicoes = sorted(
+            (
+                {
+                    "produto_id": i,
+                    "nome": cesta_base[i]["nome"],
+                    "preco_base": round(cesta_base[i]["preco"], 2),
+                    "preco_novo": round(cesta_nova[i]["preco"], 2),
+                    "pontos_percentuais": round(
+                        cesta_base[i]["quantidade"]
+                        * (cesta_nova[i]["preco"] - cesta_base[i]["preco"])
+                        / custo_antigo
+                        * 100,
+                        2,
+                    ),
+                }
+                for i in comuns
+            ),
+            key=lambda c: abs(c["pontos_percentuais"]),
+            reverse=True,
+        )
+
+        cobertura = custo_antigo / gasto_base_total * 100
+
+        # A confiança vem da cobertura e do número de produtos comparados, e existe
+        # para o número não ser lido com mais firmeza do que merece. Um mês em que
+        # faltam notas produz cobertura baixa e poucos produtos em comum — o índice
+        # então mede o acaso de quais notas existem, não o preço.
+        if cobertura >= 60 and len(comuns) >= 25:
+            confianca = "alta"
+        elif cobertura >= 40 and len(comuns) >= 15:
+            confianca = "media"
+        else:
+            confianca = "baixa"
+
+        resultado.append(
+            {
+                "mes_base": base,
+                "mes": seguinte,
+                "variacao_percentual": round(variacao, 2),
+                "cobertura": round(cobertura, 1),
+                "confianca": confianca,
+                "produtos_comparados": len(comuns),
+                "produtos_no_mes_base": len(cesta_base),
+                "maiores_altas": [
+                    c for c in contribuicoes if c["pontos_percentuais"] > 0
+                ][:5],
+                "maiores_quedas": [
+                    c for c in contribuicoes if c["pontos_percentuais"] < 0
+                ][:5],
+            }
+        )
+
+    return resultado
+
+
+async def alertas_preco(
+    sessao: AsyncSession, *, limite_percentual: float = 15.0, minimo_compras: int = 3
+) -> list[dict[str, object]]:
+    """Itens comprados acima do preço que você costuma pagar naquele produto.
+
+    Compara o preço de cada item com a **mediana** das outras compras do mesmo produto
+    — mediana e não média porque uma única compra atípica distorce a média e geraria
+    alerta sobre si mesma.
+
+    ``minimo_compras`` existe porque "o preço usual" não significa nada com uma ou duas
+    observações: abaixo disso o alerta seria ruído com aparência de informação.
+    """
+    consulta = (
+        select(
+            ItemNota.id,
+            ItemNota.produto_id,
+            Produto.nome,
+            ItemNota.descricao_origem,
+            ItemNota.valor_unitario,
+            ItemNota.unidade,
+            NotaFiscal.id.label("nota_id"),
+            _data_da_compra().label("mes"),
+            func.coalesce(NotaFiscal.emitida_em, NotaFiscal.criado_em).label("data"),
+        )
+        .select_from(ItemNota)
+        .join(Produto, Produto.id == ItemNota.produto_id)
+        .join(NotaFiscal, NotaFiscal.id == ItemNota.nota_id)
+    )
+
+    linhas = (await sessao.execute(consulta)).all()
+
+    por_produto: dict[int, list] = {}
+    for linha in linhas:
+        por_produto.setdefault(linha.produto_id, []).append(linha)
+
+    alertas = []
+    for itens in por_produto.values():
+        if len(itens) < minimo_compras:
+            continue
+
+        for item in itens:
+            # Mediana das OUTRAS compras: incluir a própria faria o item puxar o
+            # referencial na direção dele e amortecer o próprio desvio.
+            outros = sorted(
+                float(o.valor_unitario) for o in itens if o.id != item.id
+            )
+            if len(outros) < 2:
+                continue
+            meio = len(outros) // 2
+            usual = (
+                outros[meio]
+                if len(outros) % 2
+                else (outros[meio - 1] + outros[meio]) / 2
+            )
+            if usual <= 0:
+                continue
+
+            atual = float(item.valor_unitario)
+            desvio = (atual / usual - 1) * 100
+            if desvio < limite_percentual:
+                continue
+
+            alertas.append(
+                {
+                    "item_id": item.id,
+                    "nota_id": item.nota_id,
+                    "produto_id": item.produto_id,
+                    "nome": item.nome,
+                    "descricao_origem": item.descricao_origem,
+                    "unidade": item.unidade,
+                    "preco_pago": round(atual, 2),
+                    "preco_usual": round(usual, 2),
+                    "acima_percentual": round(desvio, 1),
+                    "data": item.data.date().isoformat() if item.data else None,
+                    "n_compras": len(itens),
+                }
+            )
+
+    return sorted(alertas, key=lambda a: a["acima_percentual"], reverse=True)
+
+
+async def recorrencia_produtos(sessao: AsyncSession) -> dict[str, object]:
+    """Separa o que você compra sempre do que foi compra de uma vez.
+
+    Útil por dois motivos: os recorrentes são onde a variação de preço realmente pesa no
+    orçamento, e os eventuais explicam picos de gasto que não são inflação.
+    """
+    mes = _data_da_compra().label("mes")
+    consulta = (
+        select(
+            Produto.id,
+            Produto.nome,
+            Produto.categoria,
+            func.count(func.distinct(mes)).label("meses"),
+            func.count(ItemNota.id).label("compras"),
+            func.sum(ItemNota.valor_total).label("gasto"),
+        )
+        .select_from(ItemNota)
+        .join(Produto, Produto.id == ItemNota.produto_id)
+        .join(NotaFiscal, NotaFiscal.id == ItemNota.nota_id)
+        .group_by(Produto.id, Produto.nome, Produto.categoria)
+    )
+
+    total_meses = await sessao.scalar(
+        select(func.count(func.distinct(_data_da_compra()))).select_from(NotaFiscal)
+    )
+    total_meses = int(total_meses or 0)
+
+    recorrentes, frequentes, eventuais = [], [], []
+    for linha in await sessao.execute(consulta):
+        registro = {
+            "produto_id": linha.id,
+            "nome": linha.nome,
+            "categoria": linha.categoria,
+            "meses": int(linha.meses or 0),
+            "compras": int(linha.compras or 0),
+            "gasto": float(linha.gasto or 0),
+        }
+        if total_meses and registro["meses"] == total_meses:
+            recorrentes.append(registro)
+        elif total_meses and registro["meses"] >= max(2, total_meses / 2):
+            frequentes.append(registro)
+        else:
+            eventuais.append(registro)
+
+    ordenar = lambda lista: sorted(lista, key=lambda r: r["gasto"], reverse=True)  # noqa: E731
+
+    return {
+        "total_meses": total_meses,
+        "recorrentes": ordenar(recorrentes),
+        "frequentes": ordenar(frequentes),
+        "eventuais": ordenar(eventuais)[:20],
+        "gasto_recorrente": round(sum(r["gasto"] for r in recorrentes), 2),
+        "gasto_eventual": round(sum(r["gasto"] for r in eventuais), 2),
+    }
+
+
 async def grupos_suspeitos(
     sessao: AsyncSession, *, fator_preco: float = 3.0
 ) -> list[dict[str, object]]:
