@@ -33,7 +33,10 @@ from dataclasses import dataclass
 
 # ------------------------------------------------------------------ categorias
 
-CARNES = "Carnes"
+BOVINA = "Carne bovina"
+AVES = "Aves"
+PEIXES = "Peixes"
+SUINOS = "Suínos e embutidos"
 CONGELADOS = "Congelados"
 HORTIFRUTI = "Hortifruti"
 PADARIA = "Padaria"
@@ -105,49 +108,84 @@ REGRAS: tuple[Regra, ...] = (
     Regra(r"EXTRATO.*TOMATE|\bEXT\s*TOM", "Extrato de tomate", MERCEARIA, True, "g"),
     Regra(r"MOL\s*TOM|MOLHO.*TOMATE", "Molho de tomate", MERCEARIA),
     Regra(r"TOMATE\s*SECO", "Tomate seco", MERCEARIA),
-    # ================================================================= carnes
+    # ============================ produtos preparados que citam corte/ingrediente
+    #
+    # Estas regras vêm **antes** das carnes de propósito, e o motivo é o mesmo que levou
+    # a ancorar hortifruti e padaria: num produto industrializado, o nome do corte é
+    # **sabor**, não o produto. Com as regras de corte primeiro, aparecia isto:
+    #
+    #     HAMBURG.BOV.FRIBOI MATURATTA 180G PICANHA  -> Picanha
+    #     HAMBURG.BOV.FRIBOI MATURATTA 180G COSTELA  -> Costela
+    #     PIZZA S PR kg BACON                        -> Bacon
+    #     CAFE TOR.E MOIDO 250G                      -> Carne moída
+    #
+    # O último é o mais grave: café moído entrando na série de preço da carne moída.
+    # Resolver por ordem funciona porque a palavra do produto preparado é sempre mais
+    # específica que o nome do corte solto.
+    Regra(r"^PAO.*HAMBURG|^PAO.*BISNAG", "Pão de hambúrguer", PADARIA),
+    Regra(r"MINI\s*HAMBURG", "Mini hambúrguer", CONGELADOS),
+    Regra(r"HAMBURG.*(FGO|FRANGO)", "Hambúrguer de frango", CONGELADOS),
+    Regra(r"HAMBURG", "Hambúrguer bovino", CONGELADOS),
+    Regra(r"\bPIZZA", "Pizza congelada", CONGELADOS, separar_granel=True),
+    Regra(
+        r"\bCHIPS|SALGADIN|BATATA\s*PALHA|BATATA.*(LAYS|RUFFLES|PRINGLES|ELMA)",
+        "Salgadinho",
+        DOCES,
+        True,
+        "g",
+    ),
+    # Café antes de "MOID": "CAFE TOR.E MOIDO" é café.
+    Regra(r"\bCAFE\b", "Café", MERCEARIA, com_tamanho=True),
+    # Prato pronto congelado que leva frango no nome, antes de qualquer regra de ave.
+    Regra(
+        r"(FRANGO|FGO).*(CREMOS|MEU\s*MENU|A\s*PARMEGIANA|C\/ARROZ|ARROZ\s*C)",
+        "Prato pronto congelado",
+        CONGELADOS,
+    ),
+    # ============================================== carnes (bovina / aves / peixes)
+    # Separadas em categorias distintas de propósito: R$/kg de bovino, de frango e de
+    # peixe não são a mesma escala, e somá-los num "Carnes" único escondia justamente
+    # a substituição entre eles — trocar bovino por frango aparece como "economia em
+    # carnes" quando é mudança de hábito, não de preço.
     # Sem `separar_granel`: carne moída é sempre vendida por peso, e o lojista escreve
     # "kg" de forma inconsistente na descrição. A flag olha o texto, não a unidade real,
     # então aqui ela partia um produto genuinamente recorrente (6/6 meses) em dois de
     # 3/6 — "Carne moída" e "Carne moída a granel". A variância que sobra é preço mesmo.
-    Regra(r"\bMOID", "Carne moída", CARNES),
-    Regra(r"\bALCAT", "Alcatra", CARNES),
-    Regra(r"\bMAMINHA|\bMAM\b", "Maminha", CARNES),
-    Regra(r"\bPICANHA", "Picanha", CARNES),
-    Regra(r"\bCOXAO", "Coxão", CARNES),
-    Regra(r"\bPATINHO", "Patinho", CARNES),
-    Regra(r"\bPALETA", "Paleta", CARNES),
-    Regra(r"\bANCHO|\bBIFE\s*ANCHO", "Ancho", CARNES),
-    Regra(r"\bSALSICHAO|\bSALSICHA", "Salsicha", CARNES, separar_granel=True),
-    Regra(r"\bCONTRA\s*FILE|\bCONTRAFILE", "Contrafilé", CARNES),
-    Regra(r"\bCOSTELA", "Costela", CARNES),
-    Regra(r"\bACEM\b", "Acém", CARNES),
+    Regra(r"\bMOID", "Carne moída", BOVINA),
+    Regra(r"\bALCAT", "Alcatra", BOVINA),
+    Regra(r"\bMAMINHA|\bMAM\b", "Maminha", BOVINA),
+    Regra(r"\bPICANHA", "Picanha", BOVINA),
+    Regra(r"\bCOXAO", "Coxão", BOVINA),
+    Regra(r"\bPATINHO", "Patinho", BOVINA),
+    Regra(r"\bPALETA", "Paleta", BOVINA),
+    Regra(r"\bANCHO|\bBIFE\s*ANCHO", "Ancho", BOVINA),
+    Regra(r"\bSALSICHAO|\bSALSICHA", "Salsicha", SUINOS, separar_granel=True),
+
+    Regra(r"\bCONTRA\s*FILE|\bCONTRAFILE", "Contrafilé", BOVINA),
+    Regra(r"\bCOSTELA", "Costela", BOVINA),
+    Regra(r"\bACEM\b", "Acém", BOVINA),
     # Cortes de frango antes de qualquer regra genérica de frango.
-    Regra(r"PEITO.*(FGO|FRANGO)|(FGO|FRANGO).*PEITO", "Peito de frango", CARNES),
+    Regra(r"PEITO.*(FGO|FRANGO)|(FGO|FRANGO).*PEITO", "Peito de frango", AVES),
     Regra(
         r"FILE.*(FGO|FRANGO)|(FGO|FRANGO).*FILE|^FILE\s*DE\s*PEITO",
         "Filé de frango",
-        CARNES,
+        AVES,
     ),
-    Regra(r"COXA.*(FGO|FRANGO)|SOBRECOXA", "Coxa de frango", CARNES),
-    Regra(r"\bASA.*(FGO|FRANGO)", "Asa de frango", CARNES),
-    Regra(r"\bLINGUI", "Linguiça", CARNES),
-    Regra(r"\bBACON", "Bacon", CARNES),
+    Regra(r"COXA.*(FGO|FRANGO)|SOBRECOXA", "Coxa de frango", AVES),
+    Regra(r"\bASA.*(FGO|FRANGO)", "Asa de frango", AVES),
+    Regra(r"\bFRANGO\s*INTEIRO|^FRANGO.*\bKG\b", "Frango inteiro", AVES),
+    Regra(r"\bBACON", "Bacon", SUINOS),
+    Regra(r"\bLINGUI", "Linguiça", SUINOS),
+    # Depois de bacon, de verdade: "BACON DEF kg PERNIL" é bacon defumado de pernil, e
+    # com a regra de pernil antes ele era classificado como "Suíno".
+    Regra(r"\bCOSTELINHA|\bPERNIL|\bLOMBO\s*SUINO|\bCARNE\s*SUINA", "Suíno", SUINOS),
     # Separado por espécie: filé embalado (UN) e peixe a granel (KG) não compartilham
     # escala de preço, e "Peixe" juntando tudo gerava faixa de 28 a 40 sem significado.
-    Regra(r"\bTILAP", "Tilápia", CARNES),
-    Regra(r"\bPOLACA|\bMERLUZA|\bPX\b", "Polaca ou merluza", CARNES),
-    Regra(r"\bSALMAO", "Salmão", CARNES),
-    Regra(r"\bPEIXE|\bSARDINHA\s*FRESC", "Peixe", CARNES),
+    Regra(r"\bTILAP", "Tilápia", PEIXES),
+    Regra(r"\bPOLACA|\bMERLUZA|\bPX\b", "Polaca ou merluza", PEIXES),
+    Regra(r"\bSALMAO", "Salmão", PEIXES),
+    Regra(r"\bPEIXE|\bSARDINHA\s*FRESC", "Peixe", PEIXES),
     # ============================================================= congelados
-    # Pão de hambúrguer antes de QUALQUER regra de hambúrguer: "PAO MQP VENDA kg
-    # HAMBURGUER" é pão de padaria e estava entrando na série do congelado.
-    Regra(r"^PAO.*HAMBURG|^PAO.*BISNAG", "Pão de hambúrguer", PADARIA),
-    # "MINI HAMBURG" antes de "HAMBURG", senão o mini vira hambúrguer comum e a
-    # série de preço mistura produtos de tamanhos bem diferentes.
-    Regra(r"MINI\s*HAMBURG", "Mini hambúrguer", CONGELADOS),
-    Regra(r"HAMBURG.*(FGO|FRANGO)", "Hambúrguer de frango", CONGELADOS),
-    Regra(r"HAMBURG", "Hambúrguer bovino", CONGELADOS),
     Regra(r"\bNUGGET", "Nuggets", CONGELADOS),
     Regra(r"\bEMPANADO|\bSTEAK\s*FGO", "Empanado de frango", CONGELADOS),
     # Sanduíche congelado recheado, vendido como porção individual. Sem `com_tamanho`
@@ -161,7 +199,6 @@ REGRAS: tuple[Regra, ...] = (
     ),
     Regra(r"\bLASANHA", "Lasanha congelada", CONGELADOS),
     Regra(r"PAO\s*DE\s*QUEIJO", "Pão de queijo", CONGELADOS),
-    Regra(r"\bPIZZA", "Pizza congelada", CONGELADOS, separar_granel=True),
     Regra(r"\bPOLPA", "Polpa de fruta", CONGELADOS),
     Regra(r"BROCOLIS.*(DAUCY|CONG)", "Brócolis congelado", CONGELADOS),
     Regra(
@@ -312,7 +349,6 @@ REGRAS: tuple[Regra, ...] = (
         "Cápsulas de café",
         MERCEARIA,
     ),
-    Regra(r"\bCAFE\b", "Café", MERCEARIA, com_tamanho=True),
     # "MACARRAO INST" antes de "MACARRAO".
     Regra(r"(MACARRAO|MAC)\s*INST|\bLAMEN\b", "Macarrão instantâneo", MERCEARIA),
     Regra(r"\bMACARRAO|\bMAC\s", "Macarrão", MERCEARIA, com_tamanho=True),
@@ -373,13 +409,6 @@ REGRAS: tuple[Regra, ...] = (
     # Salgadinho de festa vem em pacote de centenas de gramas e custa múltiplas
     # vezes um chips — produtos distintos, não marcas do mesmo.
     Regra(r"\bSALG\b|SALGADINHO\s*DE\s*FESTA", "Salgadinho de festa", CONGELADOS),
-    Regra(
-        r"\bCHIPS|SALGADIN|BATATA\s*PALHA|BATATA.*(LAYS|RUFFLES|PRINGLES|ELMA)",
-        "Salgadinho",
-        DOCES,
-        True,
-        "g",
-    ),
     Regra(r"\bWAFER", "Wafer", DOCES),
     Regra(r"\bALFAJOR", "Alfajor", DOCES, True, "g"),
     Regra(

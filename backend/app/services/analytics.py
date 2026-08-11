@@ -62,6 +62,7 @@ async def serie_precos(
             func.max(ItemNota.valor_unitario).label("preco_max"),
             func.sum(ItemNota.valor_total).label("total_gasto"),
             func.sum(ItemNota.quantidade).label("quantidade_total"),
+            func.max(ItemNota.unidade).label("unidade"),
             func.count().label("n_compras"),
         )
         .join(NotaFiscal, NotaFiscal.id == ItemNota.nota_id)
@@ -71,18 +72,107 @@ async def serie_precos(
     )
 
     resultado = await sessao.execute(_filtro_periodo(consulta, desde, ate))
-    return [
-        {
-            "mes": linha.mes.date().isoformat() if hasattr(linha.mes, "date") else str(linha.mes),
-            "preco_medio": float(linha.preco_medio or 0),
-            "preco_min": float(linha.preco_min or 0),
-            "preco_max": float(linha.preco_max or 0),
-            "total_gasto": float(linha.total_gasto or 0),
-            "quantidade_total": float(linha.quantidade_total or 0),
+    pontos = []
+    for linha in resultado:
+        gasto = float(linha.total_gasto or 0)
+        quantidade = float(linha.quantidade_total or 0)
+        pontos.append(
+            {
+                "mes": (
+                    linha.mes.date().isoformat()
+                    if hasattr(linha.mes, "date")
+                    else str(linha.mes)
+                ),
+                # Preço **ponderado pelo volume**: é o que de fato se pagou por
+                # quilo/unidade no mês. A média simples de `valor_unitario` trata uma
+                # compra de 0,2 kg e outra de 2 kg com o mesmo peso, e nesse caso o
+                # número não corresponde a nenhum dinheiro que saiu do bolso.
+                "preco_ponderado": round(gasto / quantidade, 4) if quantidade else 0.0,
+                "preco_medio": float(linha.preco_medio or 0),
+                "preco_min": float(linha.preco_min or 0),
+                "preco_max": float(linha.preco_max or 0),
+                "total_gasto": round(gasto, 2),
+                "quantidade_total": round(quantidade, 4),
+                "unidade": linha.unidade,
+                "n_compras": int(linha.n_compras or 0),
+            }
+        )
+    return pontos
+
+
+async def comparar_produtos(
+    sessao: AsyncSession,
+    produto_ids: list[int],
+    *,
+    desde: date | None = None,
+    ate: date | None = None,
+) -> dict[str, object]:
+    """Série de preço de vários produtos no mesmo eixo, para comparar entre si.
+
+    Pensado para cortes de carne: acém, alcatra e maminha só fazem sentido comparados
+    lado a lado, com o preço **por quilo** — o gasto total confunde, porque comprar
+    menos de um corte caro pode custar o mesmo que comprar mais de um barato.
+
+    Devolve também quantidade e gasto por mês, que é o que separa "o preço subiu" de
+    "eu comprei mais".
+    """
+    mes = _data_da_compra().label("mes")
+    consulta = (
+        select(
+            mes,
+            Produto.id.label("produto_id"),
+            Produto.nome.label("nome"),
+            func.sum(ItemNota.valor_total).label("gasto"),
+            func.sum(ItemNota.quantidade).label("quantidade"),
+            func.max(ItemNota.unidade).label("unidade"),
+            func.count().label("n_compras"),
+        )
+        .select_from(ItemNota)
+        .join(Produto, Produto.id == ItemNota.produto_id)
+        .join(NotaFiscal, NotaFiscal.id == ItemNota.nota_id)
+        .where(ItemNota.produto_id.in_(produto_ids))
+        .group_by(mes, Produto.id, Produto.nome)
+        .order_by(mes)
+    )
+
+    linhas = (await sessao.execute(_filtro_periodo(consulta, desde, ate))).all()
+
+    def rotulo(valor) -> str:
+        return valor.date().isoformat() if hasattr(valor, "date") else str(valor)
+
+    meses = sorted({rotulo(linha.mes) for linha in linhas})
+    por_produto: dict[int, dict] = {}
+
+    for linha in linhas:
+        registro = por_produto.setdefault(
+            linha.produto_id,
+            {
+                "produto_id": linha.produto_id,
+                "nome": linha.nome,
+                "unidade": linha.unidade,
+                "pontos": {},
+            },
+        )
+        gasto = float(linha.gasto or 0)
+        quantidade = float(linha.quantidade or 0)
+        registro["pontos"][rotulo(linha.mes)] = {
+            "preco": round(gasto / quantidade, 4) if quantidade else 0.0,
+            "quantidade": round(quantidade, 4),
+            "gasto": round(gasto, 2),
             "n_compras": int(linha.n_compras or 0),
         }
-        for linha in resultado
-    ]
+
+    series = []
+    for registro in por_produto.values():
+        pontos = registro.pop("pontos")
+        # Mês sem compra fica como None em vez de zero: zero desenharia uma queda de
+        # preço a 0 que não aconteceu — o produto só não foi comprado.
+        registro["serie"] = [pontos.get(m) for m in meses]
+        registro["meses_com_compra"] = sum(1 for m in meses if m in pontos)
+        series.append(registro)
+
+    series.sort(key=lambda s: s["meses_com_compra"], reverse=True)
+    return {"meses": meses, "produtos": series}
 
 
 async def ranking_gastos(

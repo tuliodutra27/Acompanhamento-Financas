@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_session
-from app.core.erros import NaoEncontrado
+from app.core.erros import NaoEncontrado, OperacaoInvalida
 from app.models.produto import Produto
 from app.services import analytics
 
@@ -98,6 +98,32 @@ async def produtos_da_categoria(
     return await analytics.produtos_da_categoria(
         sessao, categoria, desde=desde, ate=ate
     )
+
+
+@router.get("/comparar")
+async def comparar_produtos(
+    produtos: str = Query(
+        ..., description="IDs de produto separados por vírgula, ex.: 12,15,18"
+    ),
+    desde: date | None = None,
+    ate: date | None = None,
+    sessao: AsyncSession = Depends(get_session),
+) -> dict[str, object]:
+    """Compara a série de preço de vários produtos no mesmo eixo.
+
+    Feito para cortes de carne: acém, alcatra e maminha só se comparam por **preço por
+    quilo**, e a resposta traz quantidade e gasto de cada mês porque é isso que separa
+    "o preço subiu" de "eu comprei mais".
+    """
+    ids = []
+    for parte in produtos.split(","):
+        parte = parte.strip()
+        if parte.isdigit():
+            ids.append(int(parte))
+    if not ids:
+        raise OperacaoInvalida("Informe ao menos um id de produto em `produtos`.")
+
+    return await analytics.comparar_produtos(sessao, ids, desde=desde, ate=ate)
 
 
 @router.get("/inflacao-cesta")

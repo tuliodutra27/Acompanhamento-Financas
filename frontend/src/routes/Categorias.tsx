@@ -17,8 +17,10 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { GraficoBarras } from "../components/GraficoBarras";
 import { GraficoColunasEmpilhadas } from "../components/GraficoColunasEmpilhadas";
+import { GraficoComparacao } from "../components/GraficoComparacao";
 import { GraficoComposicao } from "../components/GraficoComposicao";
 import type {
+  ComparacaoProdutos,
   EvolucaoCategorias,
   FatiaCategoria,
   ProdutoDaCategoria,
@@ -35,6 +37,7 @@ export function Categorias() {
 
   const [aberta, setAberta] = useState<string | null>(null);
   const [produtos, setProdutos] = useState<ProdutoDaCategoria[]>([]);
+  const [comparacao, setComparacao] = useState<ComparacaoProdutos | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -60,8 +63,18 @@ export function Categorias() {
     }
     setAberta(categoria);
     setProdutos([]);
+    setComparacao(null);
     try {
-      setProdutos(await api.produtosDaCategoria(categoria));
+      const lista = await api.produtosDaCategoria(categoria);
+      setProdutos(lista);
+
+      // Compara os oito maiores em gasto: é o teto da paleta categórica, e acima
+      // disso as linhas deixam de ser distinguíveis. Só produtos com mais de uma
+      // compra entram — um ponto isolado não forma linha nem diz nada sobre preço.
+      const comparaveis = lista.filter((p) => p.n_compras > 1).slice(0, 8);
+      if (comparaveis.length >= 2) {
+        setComparacao(await api.comparar(comparaveis.map((p) => p.produto_id)));
+      }
     } catch {
       setErro(`Não foi possível carregar os produtos de ${categoria}.`);
     }
@@ -183,6 +196,20 @@ export function Categorias() {
           <p className="legenda">
             Produtos desta categoria, do maior gasto para o menor.
           </p>
+          {comparacao && comparacao.produtos.length >= 2 && (
+            <div style={{ marginBottom: "1.2rem" }}>
+              <h3 style={{ fontSize: "0.88rem", margin: "0 0 0.15rem" }}>
+                Comparação de preço por unidade
+              </h3>
+              <p className="legenda">
+                Cada linha é um produto desta categoria. O eixo é preço por kg ou
+                unidade — comparar gasto total não funciona quando as quantidades
+                compradas são diferentes.
+              </p>
+              <GraficoComparacao dados={comparacao} />
+            </div>
+          )}
+
           {produtos.length === 0 ? (
             <p className="vazio">Carregando…</p>
           ) : (

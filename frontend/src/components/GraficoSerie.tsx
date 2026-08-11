@@ -1,6 +1,11 @@
 /**
  * Evolução do preço de um produto mês a mês.
  *
+ * A linha usa o preço **ponderado pelo volume** (gasto ÷ quantidade do mês), não a
+ * média das linhas da nota: comprar 0,2 kg a R$ 60 e 2 kg a R$ 40 dá média simples de
+ * R$ 50, valor que não corresponde a nenhum dinheiro que saiu do bolso. O ponderado dá
+ * R$ 41,80 — o que se pagou de fato por quilo.
+ *
  * Forma: linha (tendência no tempo), série única — por isso não há legenda: o título
  * do cartão nomeia o que está sendo mostrado. A faixa clara atrás da linha é o
  * intervalo mínimo–máximo pago naquele mês, no mesmo hue em passo claro; ela é
@@ -34,8 +39,8 @@ export function GraficoSerie({ serie, rotuloMes }: Props) {
   const geometria = useMemo(() => {
     if (serie.length === 0) return null;
 
-    const minimos = serie.map((p) => p.preco_min || p.preco_medio);
-    const maximos = serie.map((p) => p.preco_max || p.preco_medio);
+    const minimos = serie.map((p) => p.preco_min || p.preco_ponderado);
+    const maximos = serie.map((p) => p.preco_max || p.preco_ponderado);
     const menor = Math.min(...minimos);
     const maior = Math.max(...maximos);
     // Folga de 12% para a linha não encostar nas bordas.
@@ -54,15 +59,15 @@ export function GraficoSerie({ serie, rotuloMes }: Props) {
       T + alturaPlot - ((valor - yMin) / (yMax - yMin || 1)) * alturaPlot;
 
     const linha = serie
-      .map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.preco_medio).toFixed(1)}`)
+      .map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.preco_ponderado).toFixed(1)}`)
       .join(" ");
 
     // Faixa min–max: sobe pelos máximos e volta pelos mínimos.
-    const topo = serie.map((p, i) => `${x(i).toFixed(1)},${y(p.preco_max || p.preco_medio).toFixed(1)}`);
+    const topo = serie.map((p, i) => `${x(i).toFixed(1)},${y(p.preco_max || p.preco_ponderado).toFixed(1)}`);
     const base = [...serie]
       .map((p, i) => ({ p, i }))
       .reverse()
-      .map(({ p, i }) => `${x(i).toFixed(1)},${y(p.preco_min || p.preco_medio).toFixed(1)}`);
+      .map(({ p, i }) => `${x(i).toFixed(1)},${y(p.preco_min || p.preco_ponderado).toFixed(1)}`);
     const faixa = `M${topo.join(" L")} L${base.join(" L")} Z`;
 
     // Três marcas no eixo Y bastam: mais que isso vira ruído num gráfico pequeno.
@@ -120,7 +125,7 @@ export function GraficoSerie({ serie, rotuloMes }: Props) {
           <circle
             key={ponto.mes}
             cx={x(i)}
-            cy={y(ponto.preco_medio)}
+            cy={y(ponto.preco_ponderado)}
             r={foco === i ? 6 : 4}
             fill="var(--serie-1)"
             // Anel na cor da superfície separa o marcador da faixa por baixo.
@@ -133,19 +138,19 @@ export function GraficoSerie({ serie, rotuloMes }: Props) {
         <text
           className="rotulo-direto"
           x={x(0)}
-          y={y(serie[0].preco_medio) - 10}
+          y={y(serie[0].preco_ponderado) - 10}
           textAnchor="start"
         >
-          {moeda(serie[0].preco_medio)}
+          {moeda(serie[0].preco_ponderado)}
         </text>
         {serie.length > 1 && (
           <text
             className="rotulo-direto"
             x={x(serie.length - 1)}
-            y={y(serie[serie.length - 1].preco_medio) - 10}
+            y={y(serie[serie.length - 1].preco_ponderado) - 10}
             textAnchor="end"
           >
-            {moeda(serie[serie.length - 1].preco_medio)}
+            {moeda(serie[serie.length - 1].preco_ponderado)}
           </text>
         )}
 
@@ -200,11 +205,20 @@ export function GraficoSerie({ serie, rotuloMes }: Props) {
           className="tooltip"
           style={{
             left: `${(x(foco) / LARGURA) * 100}%`,
-            top: `${(y(pontoFoco.preco_medio) / ALTURA) * 100}%`,
+            top: `${(y(pontoFoco.preco_ponderado) / ALTURA) * 100}%`,
           }}
         >
           <div className="tt-titulo">{rotuloMes(pontoFoco.mes)}</div>
-          <div className="tt-valor">{moeda(pontoFoco.preco_medio)}</div>
+          <div className="tt-valor">
+            {moeda(pontoFoco.preco_ponderado)}
+            {pontoFoco.unidade ? `/${pontoFoco.unidade.toLowerCase()}` : ""}
+          </div>
+          {/* Quantidade e gasto junto do preço: é o par que revela "comprei menos e
+              paguei mais", que nenhum dos dois mostra isolado. */}
+          <div className="tt-titulo">
+            {pontoFoco.quantidade_total.toLocaleString("pt-BR")}{" "}
+            {pontoFoco.unidade?.toLowerCase() || "un"} · {moeda(pontoFoco.total_gasto)}
+          </div>
           {pontoFoco.preco_max > pontoFoco.preco_min && (
             <div className="tt-titulo">
               de {moeda(pontoFoco.preco_min)} a {moeda(pontoFoco.preco_max)}

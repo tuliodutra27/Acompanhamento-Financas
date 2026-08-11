@@ -198,6 +198,35 @@ class TestOrdemDasRegras:
         achado = classificado(descricao)
         assert achado.nome == nome_esperado
         assert achado.categoria == categoria_esperada
+    @pytest.mark.parametrize(
+        ("descricao", "nome_esperado", "categoria_esperada"),
+        [
+            # Terceira aparição do mesmo padrão: em produto industrializado, o nome do
+            # corte é SABOR. Café "moído" chegando como carne moída era o pior caso.
+            ("HAMBURG.BOV.MARCA 180G PICANHA", "Hambúrguer bovino", "Congelados"),
+            ("HAMBURG.BOV.MARCA 180G COSTELA", "Hambúrguer bovino", "Congelados"),
+            ("PIZZA S PR kg BACON", "Pizza congelada a granel", "Congelados"),
+            ("CAFE TOR.E MOIDO MARCA 250G", "Café 250g", "Mercearia"),
+            ("SALGADINHO MARCA 60G COSTELA", "Salgadinho 60g", "Doces e snacks"),
+            ("FRANGO CREMO.MEU MENU MARCA 300G", "Prato pronto congelado", "Congelados"),
+            # E os cortes de verdade, que vêm numa descrição de açougue.
+            ("CARNE BOV.ACEM kg PEDACO", "Acém", "Carne bovina"),
+            ("C RSF BV ALCAT kg CR", "Alcatra", "Carne bovina"),
+            ("CARNE BOV.ACEM kg MOIDO TRAD.", "Carne moída", "Carne bovina"),
+            ("BACON DEF kg PERNIL", "Bacon", "Suínos e embutidos"),
+            # Aves e peixes fora de "Carnes": R$/kg de frango e de bovino não são a
+            # mesma escala, e somá-los esconderia a substituição entre eles.
+            ("FILE DE PEITO DE FGO.MARCA 1kg", "Peito de frango", "Aves"),
+            ("PX POLACA B ALASCA kg", "Polaca ou merluza", "Peixes"),
+            ("LINGUICA FINA MARCA kg", "Linguiça", "Suínos e embutidos"),
+        ],
+    )
+    def test_corte_em_produto_preparado_e_sabor(
+        self, descricao, nome_esperado, categoria_esperada
+    ):
+        achado = classificado(descricao)
+        assert achado.nome == nome_esperado
+        assert achado.categoria == categoria_esperada
 
     @pytest.mark.parametrize(
         ("descricao", "nome_esperado", "categoria_esperada"),
@@ -213,8 +242,8 @@ class TestOrdemDasRegras:
             ("ENERG GUARAVITON 300", "Guaraná 300ml", "Bebidas"),
             ("ENERG MONSTER 473ML", "Energético", "Bebidas"),
             ("BEBIDA LAC ENERGIA", "Bebida láctea", "Frios e laticínios"),
-            ("PET TILAP MARCA 6", "Tilápia", "Carnes"),
-            ("PX POLACA B ALASCA k", "Polaca ou merluza", "Carnes"),
+            ("PET TILAP MARCA 6", "Tilápia", "Peixes"),
+            ("PX POLACA B ALASCA k", "Polaca ou merluza", "Peixes"),
             ("BISC RECH MARCA 16", "Biscoito recheado", "Mercearia"),
             ("BISC MAIZ MARCA", "Biscoito", "Mercearia"),
         ],

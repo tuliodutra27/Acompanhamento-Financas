@@ -38,6 +38,8 @@ export function ProdutoDetalhe() {
   const { serie, variacao } = dados;
   const totalGasto = serie.reduce((soma, ponto) => soma + ponto.total_gasto, 0);
   const totalCompras = serie.reduce((soma, ponto) => soma + ponto.n_compras, 0);
+  const totalQuantidade = serie.reduce((s, p) => s + p.quantidade_total, 0);
+  const unidade = serie.find((p) => p.unidade)?.unidade?.toLowerCase() ?? "un";
 
   return (
     <>
@@ -50,7 +52,7 @@ export function ProdutoDetalhe() {
         <div className="tile">
           <div className="rotulo">Preço atual</div>
           <div className="valor">
-            {serie.length > 0 ? moeda(serie.at(-1)!.preco_medio) : "—"}
+            {serie.length > 0 ? moeda(serie.at(-1)!.preco_ponderado) : "—"}
           </div>
           <div className="nota">
             {serie.length > 0 ? `média de ${mesLegivel(serie.at(-1)!.mes)}` : "sem dados"}
@@ -87,12 +89,25 @@ export function ProdutoDetalhe() {
             em {totalCompras} {totalCompras === 1 ? "compra" : "compras"}
           </div>
         </div>
+        <div className="tile">
+          <div className="rotulo">Quantidade</div>
+          <div className="valor">
+            {totalQuantidade.toLocaleString("pt-BR", { maximumFractionDigits: 3 })}{" "}
+            <span style={{ fontSize: "0.9rem" }}>{unidade}</span>
+          </div>
+          <div className="nota">
+            média de{" "}
+            {moeda(totalQuantidade > 0 ? totalGasto / totalQuantidade : 0)}/{unidade}
+          </div>
+        </div>
       </div>
 
       <section className="cartao">
         <h2>Preço pago mês a mês</h2>
         <p className="legenda">
-          Linha: preço unitário médio. Faixa clara: do menor ao maior preço pago no mês.
+          Linha: preço por {unidade} ponderado pelo volume (gasto ÷ quantidade do mês)
+          — é o que de fato saiu do bolso, não a média das linhas da nota. Faixa clara:
+          do menor ao maior preço unitário registrado no mês.
         </p>
 
         <figure>
@@ -118,7 +133,7 @@ export function ProdutoDetalhe() {
                   <thead>
                     <tr>
                       <th>Mês</th>
-                      <th>Médio</th>
+                      <th>R$/{unidade}</th>
                       <th>Mínimo</th>
                       <th>Máximo</th>
                       <th>Qtd.</th>
@@ -129,7 +144,7 @@ export function ProdutoDetalhe() {
                     {serie.map((ponto) => (
                       <tr key={ponto.mes}>
                         <td>{mesLegivel(ponto.mes)}</td>
-                        <td>{moeda(ponto.preco_medio)}</td>
+                        <td>{moeda(ponto.preco_ponderado)}</td>
                         <td>{moeda(ponto.preco_min)}</td>
                         <td>{moeda(ponto.preco_max)}</td>
                         <td>{ponto.quantidade_total.toLocaleString("pt-BR")}</td>

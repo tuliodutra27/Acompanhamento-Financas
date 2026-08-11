@@ -98,11 +98,14 @@ export interface Sugestao {
 
 export interface PontoSerie {
   mes: string;
+  /** Gasto ÷ quantidade do mês: o que de fato se pagou por kg/unidade. */
+  preco_ponderado: number;
   preco_medio: number;
   preco_min: number;
   preco_max: number;
   total_gasto: number;
   quantidade_total: number;
+  unidade: string | null;
   n_compras: number;
 }
 
@@ -212,6 +215,27 @@ export interface GrupoSuspeito {
   maior_preco: number;
   motivos: string[];
   gravidade: "alta" | "media";
+}
+
+export interface PontoComparacao {
+  preco: number;
+  quantidade: number;
+  gasto: number;
+  n_compras: number;
+}
+
+export interface SerieComparacao {
+  produto_id: number;
+  nome: string;
+  unidade: string | null;
+  meses_com_compra: number;
+  /** Uma posição por mês; `null` onde não houve compra (lacuna, não zero). */
+  serie: (PontoComparacao | null)[];
+}
+
+export interface ComparacaoProdutos {
+  meses: string[];
+  produtos: SerieComparacao[];
 }
 
 export interface Totais {
@@ -378,6 +402,11 @@ export const api = {
 
   gruposSuspeitos: () =>
     requisitar<GrupoSuspeito[]>("/analytics/grupos-suspeitos"),
+
+  comparar: (produtoIds: number[]) =>
+    requisitar<ComparacaoProdutos>(
+      `/analytics/comparar?produtos=${produtoIds.join(",")}`,
+    ),
 };
 
 export function moeda(valor: number | string | null | undefined): string {
