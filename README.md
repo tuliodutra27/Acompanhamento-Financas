@@ -59,7 +59,7 @@ e o volume é de um usuário — cache e fila não se pagariam.
 ## Rodar
 
 ```bash
-cp .env.example .env      # defina DB_PASSWORD
+cp .env.example .env      # defina DB_PASSWORD, SECRET_KEY e AUTH_SENHA
 docker compose up -d --build
 ```
 
@@ -67,6 +67,12 @@ docker compose up -d --build
 - API + documentação: <http://localhost:8191/api/docs>
 
 As migrations rodam no start do container do backend.
+
+> **Senha.** Com `AUTH_SENHA` preenchida, o app pede login. Deixando vazia ele fica
+> aberto para quem alcançar a URL — nesse caso a interface exibe uma faixa amarela, para
+> que "aberto" seja uma escolha visível e não uma suposição. `SECRET_KEY` precisa de um
+> valor aleatório próprio (`openssl rand -hex 32`): é ela que assina a sessão e deriva a
+> credencial do atalho de importação.
 
 ### Dev sem Docker
 
@@ -88,7 +94,7 @@ npm run dev          # http://localhost:5173, /api encaminhado para :8000
 Duas camadas, com propósitos diferentes:
 
 ```bash
-cd backend && pytest              # 38 testes, ~1s, sem banco e sem rede
+cd backend && pytest              # 173 testes, ~3s, sem banco e sem rede
 bash scripts/verificar-api.sh     # verificação ponta a ponta, precisa da stack no ar
 ```
 
@@ -117,16 +123,16 @@ mantém o app numa única origem em qualquer cenário (direto na porta, atrás d
 dev) e elimina CORS do desenho. A porta 8191 fica publicada só para acesso direto à API
 e depuração.
 
-Dois pontos que **não** devem ficar para depois:
+Dois pontos que não deviam ficar para depois — o primeiro já resolvido:
 
-- **Autenticação — hoje NÃO existe (pendência consciente).** O app está publicado via
-  Tailscale Funnel em `https://<host>.<tailnet>.ts.net:8443`, sem senha: qualquer pessoa
-  com o link lê o histórico de compras (verificado de fora da rede em 09/08/2026).
-  Decisão do autor foi deixar aberto durante a fase de testes. Duas formas de fechar
-  quando quiser: `sudo tailscale serve --bg --https=8443 http://127.0.0.1:8190` em vez de
-  `funnel` (restringe à tailnet, zero código), ou Basic Auth no nginx do container `web`
-  (mantém o acesso público, exige senha). Vale fechar antes de o banco ter um histórico
-  que doa expor.
+- **Autenticação — existe desde 29/08/2026.** Login de senha única, com sessão em cookie
+  assinado. Defina `AUTH_SENHA` e `SECRET_KEY` no `.env`; **senha vazia deixa o app
+  aberto** (comportamento anterior), e nesse caso a interface exibe uma faixa amarela
+  para que isso não passe por proteção que não existe. O atalho de importação usa uma
+  credencial própria, derivada da `SECRET_KEY`, porque roda no domínio da SEFAZ e o
+  cookie `SameSite=Lax` não viaja entre sites — detalhes em
+  [docs/03-deploy-homelab.md](docs/03-deploy-homelab.md#4-autenticação). Trocar a
+  `SECRET_KEY` desloga tudo e invalida os atalhos instalados: é o botão de revogação.
 - **Backup.** `pg_dump` diário para fora do disco do servidor. Os vínculos
   produto↔item e os itens digitados à mão não são reconstruíveis de nenhuma fonte
   externa.

@@ -8,6 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 
 from app.api.v1 import router as router_v1
 from app.core.config import get_settings
@@ -41,6 +42,21 @@ if settings.ambiente == "development":
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+
+# Sessão em cookie assinado. `same_site="lax"` é o padrão que protege contra CSRF: o
+# cookie não acompanha requisições POST vindas de outro site. É justamente por isso que
+# o atalho de importação usa token próprio em vez de sessão — ver app/core/auth.py.
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.secret_key,
+    session_cookie="financas_sessao",
+    max_age=settings.sessao_dias * 24 * 3600,
+    same_site="lax",
+    # `https_only` seguiria o ambiente, mas o app roda atrás do Tailscale/NPM com TLS
+    # terminado antes: marcar Secure aqui quebraria o acesso por localhost em dev.
+    https_only=False,
+)
 
 app.include_router(router_v1)
 

@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.adapters.base import ParseFalhou
 from app.adapters.layout_padrao import parsear_pagina
+from app.core.auth import esta_autenticado, token_importacao_valido
 from app.core.chave_nfce import (
     ChaveInvalida,
     candidatos_de_chave,
@@ -52,10 +53,11 @@ TAMANHO_MAXIMO_HTML = 8 * 1024 * 1024
 # `fetch` precisa, ou a resposta é bloqueada e o usuário vê "Failed to fetch" mesmo com a
 # importação tendo funcionado — foi o que aconteceu na prática.
 #
-# `*` é aceitável **enquanto a API não tem autenticação**: hoje qualquer um que alcance a
-# API já pode chamá-la direto, então liberar a origem não concede nada novo. Ao adicionar
-# autenticação, restringir isto junto — senão uma página de terceiros poderia agir em
-# nome do usuário autenticado.
+# Liberar a origem é seguro **porque esta rota não aceita o cookie de sessão como
+# credencial**: ela exige o token de importação na URL. Uma página de terceiros que
+# tentasse chamá-la em nome do usuário autenticado não teria o token, e o cookie sozinho
+# não abre a porta. É o inverso do risco clássico de `Access-Control-Allow-Origin: *`
+# com `allow_credentials`.
 CABECALHOS_CORS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -70,10 +72,18 @@ async def importar_html_preflight() -> Response:
     return Response(status_code=204, headers=CABECALHOS_CORS)
 
 
-def _pagina(titulo: str, corpo: str, cor: str = "#0f766e") -> HTMLResponse:
-    """Resposta legível no navegador — o atalho abre isto numa aba nova."""
+def _pagina(
+    titulo: str, corpo: str, cor: str = "#0f766e", status: int = 200
+) -> HTMLResponse:
+    """Resposta legível no navegador — o atalho abre isto numa aba nova.
+
+    O status acompanha o resultado mesmo quando a resposta é uma página: o navegador
+    renderiza o corpo de um 4xx normalmente, e devolver 200 numa falha esconderia o erro
+    de qualquer log ou verificação automática.
+    """
     return HTMLResponse(
-        f"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+        status_code=status,
+        content=f"""<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
         <meta name="viewport" content="width=device-width,initial-scale=1">
         <title>{titulo}</title><style>
         body{{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#0d0d0d;
@@ -83,25 +93,25 @@ def _pagina(titulo: str, corpo: str, cor: str = "#0f766e") -> HTMLResponse:
         h1{{font-size:1.15rem;margin:0 0 .75rem;color:{cor}}}
         code{{background:#232322;padding:.1rem .35rem;border-radius:4px;font-size:.85em}}
         ul{{padding-left:1.2rem}} a{{color:#3987e5}}
-        </style></head><body><div class="caixa"><h1>{titulo}</h1>{corpo}</div></body></html>"""
+        </style></head><body><div class="caixa"><h1>{titulo}</h1>{corpo}</div></body></html>""",
     )
 
 
-async def _extrair_html_do_corpo(requisicao: Request) -> tuple[str, bool]:
-    """Devolve ``(html, veio_de_formulario)``.
-
-    Aceita as duas formas porque servem a públicos diferentes: o formulário é o que o
-    atalho usa no navegador (sem CORS), e o `text/plain` é o que scripts e testes usam.
-    """
+def _veio_de_formulario(requisicao: Request) -> bool:
     tipo = (requisicao.headers.get("content-type") or "").lower()
-    bruto = await requisicao.body()
-    texto = bruto.decode("utf-8", errors="replace")
+    return "application/x-www-form-urlencoded" in tipo
 
-    if "application/x-www-form-urlencoded" in tipo:
-        campos = parse_qs(texto, keep_blank_values=True)
-        return (campos.get("html", [""])[0], True)
 
-    return (texto, False)
+async def _ler_html_do_corpo(requisicao: Request, de_formulario: bool) -> str:
+    """Aceita duas formas de envio porque servem a públicos diferentes.
+
+    O formulário é o que o atalho usa no navegador (sem CORS); o `text/plain` é o que
+    scripts e testes usam.
+    """
+    texto = (await requisicao.body()).decode("utf-8", errors="replace")
+    if de_formulario:
+        return parse_qs(texto, keep_blank_values=True).get("html", [""])[0]
+    return texto
 
 
 @router.post("/notas/importar-html")
@@ -109,19 +119,38 @@ async def importar_html(
     requisicao: Request,
     url: str | None = Query(None, description="URL da página de onde o HTML veio"),
     chave: str | None = Query(None, description="Chave de acesso, se já conhecida"),
+    token: str | None = Query(None, description="Token do atalho de importação"),
     sessao: AsyncSession = Depends(get_session),
 ):
     """Recebe o HTML de uma nota aberta no navegador e importa os itens."""
-    html, de_formulario = await _extrair_html_do_corpo(requisicao)
+    de_formulario = _veio_de_formulario(requisicao)
 
     def falhar(titulo: str, corpo_html: str, codigo: str, http: int = 400):
         if de_formulario:
-            return _pagina(titulo, corpo_html, cor="#d03b3b")
+            return _pagina(titulo, corpo_html, cor="#d03b3b", status=http)
         return JSONResponse(
             status_code=http,
             content={"erro": {"codigo": codigo, "mensagem": titulo, "detalhes": {}}},
             headers=CABECALHOS_CORS,
         )
+
+    # Autorização antes de ler o corpo: são até 8 MB, e não há por que recebê-los de
+    # quem não pode importar. Vale a sessão (uso a partir do próprio app) **ou** o token
+    # do atalho (uso a partir do site da SEFAZ, onde o cookie de sessão não é enviado —
+    # ver app/core/auth.py).
+    if not (token_importacao_valido(token) or esta_autenticado(requisicao)):
+        return falhar(
+            "Atalho não autorizado",
+            (
+                "<p>Este atalho foi instalado antes do login existir, ou a chave "
+                "secreta do servidor mudou.</p><p>Abra o app, entre com sua senha e "
+                "instale o atalho de novo na tela <strong>Importar</strong>.</p>"
+            ),
+            "NAO_AUTENTICADO",
+            http=401,
+        )
+
+    html = await _ler_html_do_corpo(requisicao, de_formulario)
 
     if not html.strip():
         return falhar(

@@ -24,7 +24,8 @@ RUN pip install --no-cache-dir \
     "httpx>=0.28" \
     "beautifulsoup4>=4.12" \
     "lxml>=5.3" \
-    "tenacity>=9.0"
+    "tenacity>=9.0" \
+    "itsdangerous>=2.2"
 
 COPY . .
 

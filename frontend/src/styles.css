@@ -778,3 +778,39 @@ label {
   color: var(--text-secondary);
   font-size: 0.82rem;
 }
+
+/* -------------------------------------------------------------------- login */
+
+.tela-login {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.caixa-login {
+  width: 100%;
+  max-width: 360px;
+  margin: 0;
+}
+
+.caixa-login h1 {
+  font-size: 1.1rem;
+  margin: 0 0 0.15rem;
+}
+
+.caixa-login button {
+  width: 100%;
+  margin-top: 0.4rem;
+}
+
+/* Sem senha configurada o app fica aberto. A faixa existe para que isso seja visível,
+   e não uma suposição — é fácil achar que está protegido quando não está. */
+.faixa-aberto {
+  background: var(--atencao);
+  color: #0b0b0b;
+  font-size: 0.78rem;
+  text-align: center;
+  padding: 0.4rem 0.75rem;
+}

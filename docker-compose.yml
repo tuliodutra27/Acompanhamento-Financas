@@ -27,6 +27,11 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://financas:${DB_PASSWORD}@db:5432/financas
       AMBIENTE: production
+      # Senha de acesso ao app. Vazia = app aberto (a interface avisa em faixa amarela).
+      AUTH_SENHA: ${AUTH_SENHA:-}
+      # Assina o cookie de sessão e deriva o token do atalho de importação. Trocar este
+      # valor desloga tudo e invalida os atalhos instalados — é o botão de revogação.
+      SECRET_KEY: ${SECRET_KEY:?defina SECRET_KEY no .env}
     ports:
       - "8191:8000"
     depends_on:

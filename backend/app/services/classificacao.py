@@ -128,7 +128,8 @@ REGRAS: tuple[Regra, ...] = (
     Regra(r"HAMBURG", "Hambúrguer bovino", CONGELADOS),
     Regra(r"\bPIZZA", "Pizza congelada", CONGELADOS, separar_granel=True),
     Regra(
-        r"\bCHIPS|SALGADIN|BATATA\s*PALHA|BATATA.*(LAYS|RUFFLES|PRINGLES|ELMA)",
+        r"\bCHIPS|SALGADIN|BATATA\s*PALHA|\bBAT\s*PAL"
+        r"|BATATA.*(LAYS|RUFFLES|PRINGLES|ELMA)",
         "Salgadinho",
         DOCES,
         True,
@@ -428,6 +429,7 @@ REGRAS: tuple[Regra, ...] = (
     # descrição começa com "ENERG": R$ 1,94 e R$ 9,89 na mesma série de preço.
     Regra(r"BEBIDA\s*LAC|\bBEB\s*LAC", "Bebida láctea", LATICINIOS),
     Regra(r"GUARAV|GUARAN", "Guaraná", BEBIDAS, True, "ml"),
+    Regra(r"\bISOTONICO|\bPOWERADE|\bGATORADE", "Isotônico", BEBIDAS, True, "ml"),
     Regra(r"\bENERG|\bMONSTER|RED\s*BULL", "Energético", BEBIDAS),
     Regra(
         r"\bREFRI|\bREFRIG|\bCOCA|\bFANTA|\bSPRITE|\bPEPSI|\bSUKITA",

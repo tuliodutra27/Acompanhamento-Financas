@@ -9,8 +9,10 @@
 # exatamente essa faixa.
 #
 # Uso:
-#   bash scripts/verificar-api.sh                      # usa http://localhost:8191
-#   API=http://192.168.1.109:8191/api/v1 bash scripts/verificar-api.sh
+#   SENHA=sua-senha bash scripts/verificar-api.sh      # usa http://localhost:8191
+#   API=http://servidor:8191/api/v1 SENHA=... bash scripts/verificar-api.sh
+#
+# $SENHA é dispensável se o app estiver sem AUTH_SENHA (aberto).
 #
 # Cria dados sintéticos (CNPJ 12345678000195, chaves fabricadas). Para limpar depois:
 #   docker compose exec -T db psql -U financas -d financas -c \
@@ -18,6 +20,29 @@
 
 set -uo pipefail
 API="${API:-http://localhost:8191/api/v1}"
+
+# Sessão para as ~20 chamadas seguintes. Envolver o `curl` num wrapper — em vez de
+# repetir `-b/-c` em cada chamada — mantém os testes legíveis e garante que nenhuma
+# chamada nova esqueça o cookie.
+COOKIES=$(mktemp)
+trap 'rm -f "$COOKIES"' EXIT
+curl() { command curl -b "$COOKIES" -c "$COOKIES" "$@"; }
+
+# `SENHA` só é necessária se o app estiver com AUTH_SENHA configurada. Sem ela, o app
+# está aberto e as rotas respondem direto — mesmo caminho de antes do login existir.
+#   SENHA=... bash scripts/verificar-api.sh
+if [ -n "${SENHA:-}" ]; then
+  if curl -fsS -X POST "$API/auth/login" -H 'Content-Type: application/json' \
+       -d "{\"senha\":\"$SENHA\"}" >/dev/null; then
+    echo "== 0. login OK =="
+  else
+    echo "  FALHA login recusado — o resto responderia 401, abortando"
+    exit 1
+  fi
+elif curl -s "$API/auth/sessao" | grep -q '"autenticacao_ativa":true'; then
+  echo "  FALHA o app exige senha e \$SENHA não foi passada. Use: SENHA=... bash $0"
+  exit 1
+fi
 
 FALHAS=0
 ok()    { echo "  OK   $1"; }

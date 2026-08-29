@@ -57,15 +57,44 @@ Vite e o prefixo da API, porque o app assume estar servido na raiz.
 > em contexto seguro (exceto `localhost`). Sem TLS, o app funciona mas o scanner não abre
 > — e o scanner é justamente o caminho que habilita o preenchimento automático.
 
-## 4. Autenticação — não deixe para depois
+## 4. Autenticação
 
-Diferente do `compara-precos` (preço público, sem risco em expor), aqui o conteúdo é o
-seu histórico de compras. O caminho mais barato, sem escrever código:
+O app tem login próprio: **uma senha**, sem cadastro de usuário — não há um segundo
+usuário para distinguir. Duas variáveis no `.env`:
 
-**NPM → Access Lists → nova lista com usuário/senha → aplicar no Proxy Host.**
+```bash
+AUTH_SENHA=a-senha-que-voce-escolher
+SECRET_KEY=$(openssl rand -hex 32)
+```
 
-Login próprio no app (sessão/JWT) só se um dia o Basic Auth incomodar na PWA instalada —
-é conforto, não segurança adicional neste cenário.
+`AUTH_SENHA` **vazia deixa o app aberto**, que é o comportamento de antes do login
+existir. Isso é intencional: subir a stack pela primeira vez não deveria exigir escolher
+senha antes de qualquer coisa funcionar. Para não virar uma proteção imaginária, o app
+mostra uma faixa amarela em todas as telas enquanto estiver nesse estado.
+
+`SECRET_KEY` assina o cookie de sessão **e** deriva o token do atalho de importação.
+Trocar o valor desloga todas as sessões e invalida os atalhos já instalados no navegador
+— é o botão de revogação, e o único jeito de cortar um atalho vazado.
+
+### Por que o atalho de importação tem credencial própria
+
+O atalho roda dentro da página da SEFAZ e envia a nota de **outra origem**. O cookie de
+sessão usa `SameSite=Lax`, que é justamente o que protege contra CSRF — e por isso não
+acompanha um POST entre sites. Havia duas saídas: afrouxar o cookie para `SameSite=None`
+(reabrindo CSRF em todas as rotas) ou dar ao atalho uma credencial restrita a uma rota.
+A segunda foi a escolhida. O token é derivado da `SECRET_KEY` por HMAC, vale só para
+`POST /notas/importar-html`, e se vazar permite **inserir** uma nota — não ler o
+histórico, não apagar nada.
+
+Consequência prática: **quem já tinha o atalho instalado precisa reinstalá-lo** pela tela
+*Importar*, porque agora ele carrega o token na URL. O atalho antigo responde
+"Atalho não autorizado" com instrução na própria aba.
+
+### O que continua valendo
+
+O Basic Auth do NPM (Access Lists) segue disponível e é **complementar**, não redundante:
+ele barra antes da requisição chegar ao app. Se você usar os dois, o custo é digitar duas
+senhas na primeira visita.
 
 ## 5. Backup
 

@@ -187,7 +187,8 @@ interno curto viraria um "GTIN" e faria produtos diferentes colidirem no mesmo a
 | `produto.id` surrogate, não GTIN como PK | O usuário controla a granularidade do agrupamento, e itens digitados à mão não têm GTIN. |
 | Sem `UNIQUE` no nome do produto | Unicidade em texto livre é frágil (acento, espaço, caixa). A UI sugere reaproveitar; `POST /produtos/merge` corrige o que passar. |
 | Payload bruto no banco (não object storage) | Volume mínimo e depuração local; não vale um bucket para isso. |
-| Basic Auth no NPM em vez de login no app | É dado pessoal atrás de um proxy que já sabe fazer isso. Login próprio é conforto, não segurança adicional aqui. |
+| Login de senha única no app, não Basic Auth no proxy | O app é instalado como PWA: o Basic Auth reaparece a cada origem nova e não tem "sair". Uma senha e um cookie de sessão custam ~150 linhas e resolvem o caso real. O Basic Auth do NPM segue disponível, como camada extra. |
+| Token HMAC para o atalho de importação, não `SameSite=None` | O atalho posta de outro site, onde o cookie de sessão (`Lax`) não vai. Afrouxar o cookie reabriria CSRF em **todas** as rotas; o token vale para uma só, e o pior caso de vazamento é inserir uma nota. |
 
 ## 8. Descartado
 

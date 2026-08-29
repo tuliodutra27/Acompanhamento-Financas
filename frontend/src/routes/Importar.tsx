@@ -5,11 +5,16 @@
  * navegador do usuário. Então a extração automática acontece lá: o atalho lê o HTML da
  * nota já aberta e o envia para a API. Nenhum contorno de proteção — é o navegador que
  * já tem acesso legítimo à página fazendo a leitura.
+ *
+ * O atalho carrega um **token** na URL porque roda a partir do domínio da SEFAZ, e o
+ * cookie de sessão (`SameSite=Lax`) não é enviado num POST entre sites. O token vale só
+ * para a rota de importação — ver backend/app/core/auth.py.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { api } from "../api/client";
 
-function montarBookmarklet(base: string): string {
+function montarBookmarklet(base: string, token: string): string {
   // Envia por <form target="_blank">, não por fetch. Um `fetch` para outro domínio
   // exige que a resposta traga Access-Control-Allow-Origin, senão a promessa rejeita
   // com "Failed to fetch" — mesmo tendo a requisição chegado e sido processada
@@ -21,7 +26,7 @@ function montarBookmarklet(base: string): string {
         var html = document.documentElement.outerHTML;
         var f = document.createElement('form');
         f.method = 'POST';
-        f.action = '${base}/api/v1/notas/importar-html?url=' + encodeURIComponent(location.href);
+        f.action = '${base}/api/v1/notas/importar-html?token=${token}&url=' + encodeURIComponent(location.href);
         f.target = '_blank';
         f.style.display = 'none';
         var t = document.createElement('textarea');
@@ -39,8 +44,22 @@ function montarBookmarklet(base: string): string {
 
 export function Importar() {
   const [copiado, setCopiado] = useState(false);
+  const [token, setToken] = useState<string | null>(null);
   const base = window.location.origin;
-  const bookmarklet = useMemo(() => montarBookmarklet(base), [base]);
+
+  useEffect(() => {
+    void api
+      .tokenImportacao()
+      .then(({ token }) => setToken(token))
+      // App aberto (sem senha) devolve o token do mesmo jeito; se algo falhar, o atalho
+      // sem token ainda funciona nesse caso, e é melhor que travar a tela.
+      .catch(() => setToken(""));
+  }, []);
+
+  const bookmarklet = useMemo(
+    () => (token === null ? "" : montarBookmarklet(base, token)),
+    [base, token],
+  );
 
   return (
     <>
@@ -71,7 +90,9 @@ export function Importar() {
               para a barra de favoritos. */}
           <a
             className="botao primario"
-            href={bookmarklet}
+            href={bookmarklet || "#"}
+            aria-disabled={!bookmarklet}
+            style={bookmarklet ? undefined : { opacity: 0.55, pointerEvents: "none" }}
             onClick={(evento) => {
               evento.preventDefault();
               alert(
@@ -80,7 +101,7 @@ export function Importar() {
               );
             }}
           >
-            ⬇️ Importar nota (arraste para os favoritos)
+            {bookmarklet ? "⬇️ Importar nota (arraste para os favoritos)" : "Carregando…"}
           </a>
         </p>
         <p className="legenda">
@@ -92,6 +113,7 @@ export function Importar() {
         </p>
         <div className="acoes">
           <button
+            disabled={!bookmarklet}
             onClick={() => {
               void navigator.clipboard.writeText(bookmarklet).then(() => {
                 setCopiado(true);
@@ -128,6 +150,11 @@ export function Importar() {
           Duas causas comuns: estar na tela de <em>resumo</em> da nota em vez da que lista
           os produtos; ou a página não exibir a chave de acesso — nesse caso a aba{" "}
           <strong>Consulta completa</strong> do portal costuma mostrá-la.
+        </p>
+        <p className="legenda">
+          Se a aba disser <strong>“Atalho não autorizado”</strong>, o atalho é anterior
+          ao login (ou a chave secreta do servidor mudou). Instale-o de novo por esta
+          tela: ele carrega uma credencial que vale só para importar notas.
         </p>
       </section>
     </>

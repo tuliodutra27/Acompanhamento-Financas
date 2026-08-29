@@ -36,6 +36,20 @@ class Settings(BaseSettings):
         "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
     )
 
+    # Senha de acesso. **Vazia = app aberto**, que é o comportamento anterior — o login
+    # só passa a ser exigido quando isto é definido, então ativar a proteção é uma
+    # escolha explícita e não uma quebra silenciosa de quem já usa o app.
+    auth_senha: str = ""
+
+    # Assina o cookie de sessão e deriva o token do atalho de importação. Trocar este
+    # valor desloga todas as sessões e invalida o atalho instalado — é o botão de
+    # revogação.
+    secret_key: str = "troque-esta-chave-em-producao"
+
+    # Duração da sessão. Longa de propósito: é um app pessoal usado no supermercado,
+    # e pedir senha toda semana faria o usuário escolher uma senha fraca.
+    sessao_dias: int = 30
+
 
 @lru_cache
 def get_settings() -> Settings:

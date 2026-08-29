@@ -5,6 +5,17 @@
 
 const BASE = "/api/v1";
 
+/**
+ * Aviso de sessão perdida. A sessão pode expirar entre duas telas, e sem isto o app
+ * mostraria "Falha 401" em cada gráfico em vez de simplesmente pedir a senha de novo.
+ * O provedor de sessão registra o retorno para a tela de login.
+ */
+let aoPerderSessao: (() => void) | null = null;
+
+export function registrarPerdaDeSessao(callback: (() => void) | null): void {
+  aoPerderSessao = callback;
+}
+
 export type StatusNota = "pendente" | "ok" | "falhou_parse" | "manual";
 export type OrigemEntrada = "qrcode" | "chave_manual";
 
@@ -23,9 +34,15 @@ export class FalhaApi extends Error {
   }
 }
 
-async function requisitar<T>(caminho: string, init?: RequestInit): Promise<T> {
+async function requisitar<T>(
+  caminho: string,
+  init?: RequestInit & { ignorar401?: boolean },
+): Promise<T> {
+  const { ignorar401, ...opcoes } = init ?? {};
   const resposta = await fetch(`${BASE}${caminho}`, {
-    ...init,
+    ...opcoes,
+    // Explícito: o cookie de sessão precisa acompanhar toda chamada.
+    credentials: "same-origin",
     headers: {
       "Content-Type": "application/json",
       ...(init?.headers ?? {}),
@@ -37,6 +54,9 @@ async function requisitar<T>(caminho: string, init?: RequestInit): Promise<T> {
   const corpo = await resposta.json().catch(() => null);
 
   if (!resposta.ok) {
+    // `ignorar401` existe para o próprio login: ali o 401 significa "senha errada",
+    // não "sua sessão caiu" — disparar o aviso global viraria um laço.
+    if (resposta.status === 401 && !ignorar401) aoPerderSessao?.();
     const erro: ErroApi = corpo?.erro ?? {
       codigo: "ERRO_DESCONHECIDO",
       mensagem: `Falha ${resposta.status} ao chamar a API.`,
@@ -45,6 +65,12 @@ async function requisitar<T>(caminho: string, init?: RequestInit): Promise<T> {
   }
 
   return corpo as T;
+}
+
+export interface EstadoSessao {
+  autenticado: boolean;
+  /** Falso quando o servidor está sem senha configurada: o app fica aberto. */
+  autenticacao_ativa: boolean;
 }
 
 export interface Item {
@@ -256,6 +282,19 @@ export interface ItemPendente {
 }
 
 export const api = {
+  sessao: () => requisitar<EstadoSessao>("/auth/sessao", { ignorar401: true }),
+
+  login: (senha: string) =>
+    requisitar<EstadoSessao>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ senha }),
+      ignorar401: true,
+    }),
+
+  logout: () => requisitar<{ autenticado: boolean }>("/auth/logout", { method: "POST" }),
+
+  tokenImportacao: () => requisitar<{ token: string }>("/auth/token-importacao"),
+
   criarNota: (conteudo: string, origem: OrigemEntrada) =>
     requisitar<NotaDetalhe>("/notas", {
       method: "POST",

@@ -324,3 +324,27 @@ def test_toda_regra_tem_padrao_valido():
 
 def test_acentos_e_caixa_nao_atrapalham():
     assert classificado("açúcar cristal marca").nome.startswith("Açúcar")
+
+
+class TestRegrasNovas:
+    """Casos que apareceram em notas reais e não casavam com regra nenhuma."""
+
+    @pytest.mark.parametrize(
+        "descricao",
+        ["BAT PAL ELMA CH 90G", "BATATA PALHA 100G", "SALGADIN CHEETOS 45G"],
+    )
+    def test_batata_palha_abreviada_e_salgadinho(self, descricao):
+        """O cupom trunca em ~20 caracteres: "BATATA PALHA" vira "BAT PAL"."""
+        assert classificado(descricao).nome.startswith("Salgadinho")
+
+    @pytest.mark.parametrize(
+        "descricao", ["ISOTONICO POWERADE 5", "GATORADE MARACUJA 5", "POWERADE MORANGO"]
+    )
+    def test_isotonico_agrupa_marcas(self, descricao):
+        assert classificado(descricao).nome.startswith("Isotônico")
+
+    def test_isotonico_nao_vira_refrigerante(self, descricao="POWERADE LIMAO 500ML"):
+        """Bebida esportiva tem preço próprio; misturar com refrigerante suja a série."""
+        achado = classificado(descricao)
+        assert achado.nome.startswith("Isotônico")
+        assert achado.categoria == "Bebidas"
