@@ -31,7 +31,14 @@ COPY . .
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+# `start-period` generoso de propósito. Num boot frio do homelab (2 núcleos, HDD) todos
+# os containers sobem juntos, a carga passa de 9, e o `alembic upgrade head` que roda
+# antes do uvicorn levou ~3 minutos em 29/08/2026 — só de contenção de I/O, sem migration
+# nova para aplicar. Com os 20s anteriores o container era marcado `unhealthy` bem antes
+# de ter chance de responder, e `web` (que espera por `service_healthy`) ficava travado
+# atrás disso. Durante o start-period a falha não conta, então isto não esconde defeito:
+# só evita alarme falso enquanto o disco engasga.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=300s --retries=3 \
     CMD curl -fsS http://localhost:8000/api/v1/health || exit 1
 
 # Aplica as migrations antes de subir: é um app de um usuário, não há deploy
