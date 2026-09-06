@@ -148,3 +148,25 @@ class TestTokenDeImportacao:
         )
         assert resposta.status_code == 401
         assert "Atalho não autorizado" in resposta.text
+
+    def test_401_nao_libera_origem_para_o_navegador(self, cliente):
+        """A recusa sai sem CORS para que um atalho antigo baseado em `fetch` **falhe
+        visivelmente**. Com a origem liberada a promessa resolve, o atalho descarta o
+        corpo, e o usuário fica achando que importou — aconteceu em 05/09/2026."""
+        resposta = cliente.post(
+            "/api/v1/notas/importar-html",
+            content="<html></html>",
+            headers={"Content-Type": "text/plain", "Origin": "https://exemplo.gov.br"},
+        )
+        assert resposta.status_code == 401
+        assert "access-control-allow-origin" not in resposta.headers
+
+    def test_erros_que_nao_sao_401_seguem_com_cors(self, cliente):
+        """O atalho legítimo precisa ler o motivo da falha para mostrá-lo ao usuário."""
+        resposta = cliente.post(
+            f"/api/v1/notas/importar-html?token={auth.token_importacao()}",
+            content="<html></html>",
+            headers={"Content-Type": "text/plain", "Origin": "https://exemplo.gov.br"},
+        )
+        assert resposta.status_code == 400
+        assert resposta.headers["access-control-allow-origin"] == "*"

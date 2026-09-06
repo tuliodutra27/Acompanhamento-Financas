@@ -128,10 +128,18 @@ async def importar_html(
     def falhar(titulo: str, corpo_html: str, codigo: str, http: int = 400):
         if de_formulario:
             return _pagina(titulo, corpo_html, cor="#d03b3b", status=http)
+        # 401 sai **sem** cabeçalho de CORS, de propósito, e é a única resposta que faz
+        # isso. Um atalho antigo baseado em `fetch` ignora o corpo da resposta: com CORS
+        # liberado a promessa resolve, o erro é descartado e a falha fica invisível — foi
+        # exatamente o que aconteceu em 05/09/2026, com notas que o usuário achou que
+        # tinha importado. Sem o cabeçalho o navegador bloqueia a resposta, o `fetch`
+        # rejeita, e o atalho cai no próprio `catch` e alerta. Errar barulhento é melhor
+        # que errar quieto quando o custo do silêncio é perder a nota.
+        cabecalhos = {} if http == 401 else CABECALHOS_CORS
         return JSONResponse(
             status_code=http,
             content={"erro": {"codigo": codigo, "mensagem": titulo, "detalhes": {}}},
-            headers=CABECALHOS_CORS,
+            headers=cabecalhos,
         )
 
     # Autorização antes de ler o corpo: são até 8 MB, e não há por que recebê-los de

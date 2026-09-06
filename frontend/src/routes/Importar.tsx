@@ -67,6 +67,19 @@ export function Importar() {
         Importar do portal da SEFAZ
       </h1>
 
+      <div className="aviso atencao">
+        <span className="icone" aria-hidden="true">
+          ⚠️
+        </span>
+        <span>
+          <strong>Tem um atalho antigo instalado? Substitua.</strong> Desde o login, o
+          atalho precisa levar uma credencial na URL — e a versão anterior, além de não
+          ter essa credencial, mandava os dados por <span className="mono">fetch</span> e
+          descartava a resposta: ela falha <em>em silêncio</em>, sem alerta e sem
+          importar a nota. Apague o favorito antigo e instale este.
+        </span>
+      </div>
+
       <div className="aviso">
         <span className="icone" aria-hidden="true">
           ℹ️
