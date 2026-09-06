@@ -52,7 +52,7 @@ PET = "Pet"
 OUTROS = "Outros"
 
 # Tamanho de embalagem: primeiro número seguido de unidade de medida.
-_TAMANHO = re.compile(r"(\d+(?:[.,]\d+)?)\s*(KG|G|ML|LT|L)\b")
+_TAMANHO = re.compile(r"(\d+(?:[.,]\d+)?)\s*(KG|G|ML|LT|L|K)\b")
 
 # Número no fim da descrição, com a unidade ausente ou cortada pela metade. O portal
 # trunca em ~20 caracteres e o corte cai no meio da medida com frequência: `...600` e
@@ -67,7 +67,20 @@ _NAO_E_MEDIDA = re.compile(
     r"\b(TIPO|TP|N|NO|NUM|UN|UNID|CX|PC|PCT|FD|C\/)\s*\d{1,4}\s*[A-Z]{0,2}\s*$"
 )
 
-_SUFIXO_POR_UNIDADE = {"KG": "kg", "G": "g", "ML": "ml", "L": "L", "LT": "L"}
+_SUFIXO_POR_UNIDADE = {"KG": "kg", "K": "kg", "G": "g", "ML": "ml", "L": "L", "LT": "L"}
+
+# Piso de plausibilidade para o número solto no fim da descrição. O corte em 20
+# caracteres às vezes leva junto os zeros: "AZEITE ... 500ML" chega como "AZEIT OLI CINQ
+# TER 5", e ler isso como "5ml" cria um produto fantasma que rouba compras do "Azeite
+# 500ml" verdadeiro — o mesmo estrago que "ARROZ TIPO 1" fazia. Não dá para adivinhar se
+# o 5 era 50 ou 500, então o certo é **não** anexar tamanho: "Azeite" sem sufixo é
+# honesto e agrupável depois; "Azeite 5ml" é uma afirmação falsa.
+#
+# Os pisos são o menor tamanho que existe de verdade numa gôndola: não há refrigerante de
+# 60 ml nem cappuccino de 10 g, mas há barra de chocolate de 24 g. O piso de gramas nasceu
+# em 25 e cortava demais — separava "CHOCOSTICK NESTLE 24" de "CHOCOST GAROTO 24G B", que
+# são o mesmo produto e o mesmo tamanho.
+_MINIMO_PLAUSIVEL = {"ml": 100.0, "g": 20.0, "L": 0.3, "kg": 0.1}
 
 # Venda por peso solto. O "KG" precisa vir **sem número antes**: "BOMBOM DA CASA kg" é
 # granel, enquanto "ARROZ 5kg" é um pacote de 5 kg — a diferença é justamente o número.
@@ -134,6 +147,29 @@ REGRAS: tuple[Regra, ...] = (
         DOCES,
         True,
         "g",
+    ),
+    # Bolo e cápsulas **antes** de café, e é por isso que saíram da seção de padaria e de
+    # mercearia: a regra `\bCAFE\b` precisa vir cedo para ganhar de "MOIDO", e com isso
+    # engolia produtos mais específicos que apenas citam café no nome. No banco isso já
+    # tinha acontecido: "BOLO CAFE DA MANHA CASA SUICA 250G" entrou na série de preço do
+    # café a R$ 11,99, contra R$ 17 a R$ 27 do café de verdade, e "CAPS CAFE KOPEN 60G"
+    # virou "Café 60g" enquanto as outras cápsulas iam para "Cápsulas de café".
+    Regra(r"^BOLO\b", "Bolo", PADARIA),
+    Regra(
+        r"CAPS.*(NESC|DOLCE|CAFE|CAPPUC|\bD\s*G\b)|CAPSULA.*CAFE"
+        r"|\bD\s*GUST\b|\bDOLCE\s*GUSTO",
+        "Cápsulas de café",
+        MERCEARIA,
+    ),
+    # Cappuccino antes de café: é outro produto e outro preço, e o cupom abrevia os dois
+    # começando por "C". "C CAF AU LAIT" é cappuccino, não café moído. Já "C NESC D GUST"
+    # cai na regra de cápsulas acima, junto com "CAPS NESC D GUST" — é o mesmo sistema.
+    Regra(
+        r"\bCAPPUCCIN|\bCAPUCCIN|^C\s+CAF\s*AU\s*LAIT",
+        "Cappuccino",
+        MERCEARIA,
+        com_tamanho=True,
+        unidade_provavel="g",
     ),
     # Café antes de "MOID": "CAFE TOR.E MOIDO" é café.
     Regra(r"\bCAFE\b", "Café", MERCEARIA, com_tamanho=True),
@@ -240,10 +276,14 @@ REGRAS: tuple[Regra, ...] = (
     Regra(r"^BANANA", "Banana", HORTIFRUTI),
     # "BATATA DOCE" antes da inglesa: a regra genérica capturava a doce.
     Regra(r"^BATATA\s*DOCE", "Batata doce", HORTIFRUTI),
+    # Batata processada (descascada, pronta) antes da comum: custa 2 a 3 vezes mais por
+    # quilo — R$ 11,99 a 17,99 contra R$ 3,99 a 9,79 — e juntá-las fazia o preço da batata
+    # comum parecer que triplicou quando só mudou o produto.
+    Regra(r"^BATATA.*PROCESSAD", "Batata processada", HORTIFRUTI, separar_granel=True),
     # Exige "INGLESA"/"kg": o genérico capturava batata congelada de marca, que vem
     # em pacote e custa por unidade.
     Regra(
-        r"^BATATA\s*(INGLESA|ASTERIX|LAVADA)|^BATATA.*\bKG\b",
+        r"^BATATA\s*(INGLESA|ASTERIX|LAVADA|PRIMEIRINHA)|^BATATA.*\bKG\b",
         "Batata inglesa",
         HORTIFRUTI,
         separar_granel=True,
@@ -278,7 +318,13 @@ REGRAS: tuple[Regra, ...] = (
     Regra(r"^PEPINO", "Pepino", HORTIFRUTI),
     Regra(r"^MANDIOCA|^AIPIM|^MACAXEIRA", "Mandioca", HORTIFRUTI, separar_granel=True),
     Regra(r"^INHAME", "Inhame", HORTIFRUTI),
-    Regra(r"^ALHO\b", "Alho", HORTIFRUTI),
+    # Alho, em três produtos distintos porque são três preços distintos:
+    # o picado em conserva é mercearia e vendido por pote; o "limpo" (descascado) sai a
+    # R$ 25-30/kg contra R$ 9-16/kg do alho com casca. Somados, davam um "alho" que
+    # variava 5x e disparava alerta de preço todo mês sem nada ter mudado.
+    Regra(r"^ALHO.*(PICAD|CEB)|ALHO\s*E\s*CEBOLA", "Alho e cebola picados", MERCEARIA),
+    Regra(r"^ALHO\s*LIMPO|^ALHO.*DESCASC", "Alho limpo", HORTIFRUTI, separar_granel=True),
+    Regra(r"^ALHO\b", "Alho", HORTIFRUTI, separar_granel=True),
     Regra(r"^GENGIBRE", "Gengibre", HORTIFRUTI),
     Regra(r"^QUIABO", "Quiabo", HORTIFRUTI),
     Regra(r"^TOMATINHO|^TOMATE\s*CEREJA", "Tomate cereja", HORTIFRUTI),
@@ -287,7 +333,6 @@ REGRAS: tuple[Regra, ...] = (
     # ================================================================ padaria
     # Ancoradas em `^` pelo mesmo motivo do hortifruti: "SALGADINHO ... PAO DE ALHO"
     # é salgadinho de sabor pão de alho, não pão.
-    Regra(r"^BOLO\b", "Bolo", PADARIA),
     Regra(r"^BRIOCHE", "Brioche", PADARIA),
     # Pão de hambúrguer antes de qualquer regra de hambúrguer, senão "PAO ... HAMBURGUER"
     # entrava na série do hambúrguer bovino congelado.
@@ -313,6 +358,9 @@ REGRAS: tuple[Regra, ...] = (
     Regra(r"(QJ|QUEIJO).*(PRATO)", "Queijo prato", LATICINIOS),
     Regra(r"(QJ|QUEIJO).*(MINAS|FRESCAL)", "Queijo minas", LATICINIOS),
     Regra(r"\bREQUEIJAO", "Requeijão", LATICINIOS),
+    # Mistura láctea não entra em "Requeijão": é um substituto mais barato, e juntar os
+    # dois faria o preço do requeijão parecer que caiu quando só mudou o produto.
+    Regra(r"\bMIST\s*REQ|MISTURA\s*LACTEA", "Mistura láctea (requeijão)", LATICINIOS),
     Regra(r"CREME\s*DE\s*RICOTA|\bRICOTA", "Creme de ricota", LATICINIOS),
     Regra(r"CREME\s*CULINARIO", "Creme culinário", LATICINIOS),
     Regra(r"CREME\s*(DE\s*)?LEITE", "Creme de leite", LATICINIOS),
@@ -338,18 +386,15 @@ REGRAS: tuple[Regra, ...] = (
     Regra(r"FEIJAO.*(FRADIN|CAUPI|BRANCO)", "Feijão fradinho", MERCEARIA, com_tamanho=True),
     Regra(r"\bFEIJAO", "Feijão", MERCEARIA, com_tamanho=True),
     Regra(r"\bACUCAR", "Açúcar", MERCEARIA, True, "kg"),
-    # Azeitona antes de azeite: são produtos distintos e o nome começa igual.
-    Regra(r"\bAZEITONA", "Azeitona", MERCEARIA, separar_granel=True),
-    Regra(r"\bAZEITE|\bAZE\b", "Azeite", MERCEARIA, True, "ml"),
+    # Azeitona antes de azeite: são produtos distintos e o nome começa igual. "AZEIT V"
+    # (azeitona verde) só casa aqui porque exige espaço logo após AZEIT — "AZEITE VIRGEM"
+    # tem o E e escapa para a regra de baixo.
+    Regra(r"\bAZEITONA|\bAZEIT\s+V\b", "Azeitona", MERCEARIA, separar_granel=True),
+    Regra(r"\bAZEITE|\bAZEIT\b|\bAZE\b", "Azeite", MERCEARIA, True, "ml"),
     Regra(r"\bOLEO\b", "Óleo de cozinha", MERCEARIA, True, "ml"),
     # Ancorado: `\bSAL\b` casava "SAL.PEIX" no fim de "RACAO P/GATOS ... SAL.PEIX",
     # e com `com_tamanho` o "1kg" da ração virava "Sal 1kg".
     Regra(r"^SAL\b", "Sal", MERCEARIA, com_tamanho=True),
-    Regra(
-        r"CAPS.*(NESC|DOLCE|CAFE|CAPPUC|\bD\s*G\b)|CAPSULA.*CAFE",
-        "Cápsulas de café",
-        MERCEARIA,
-    ),
     # "MACARRAO INST" antes de "MACARRAO".
     Regra(r"(MACARRAO|MAC)\s*INST|\bLAMEN\b", "Macarrão instantâneo", MERCEARIA),
     Regra(r"\bMACARRAO|\bMAC\s", "Macarrão", MERCEARIA, com_tamanho=True),
@@ -360,9 +405,18 @@ REGRAS: tuple[Regra, ...] = (
         MERCEARIA,
     ),
     Regra(r"MILHO.*(VER|CONSERVA)|MILHO\s*VERDE", "Milho verde em conserva", MERCEARIA),
+    Regra(r"\bCHAMPIGNON|\bCHAMPIGNO", "Champignon", MERCEARIA),
+    # Vendido a granel na maioria das notas (0,1 kg por vez), então o preço só compara
+    # dividido pela quantidade — separar_granel evita misturar com o tablete embalado.
+    Regra(
+        r"\bCALDO\s*(DE\s*)?(GALIN|CARNE|LEGUM|BACON)",
+        "Caldo de galinha",
+        MERCEARIA,
+        separar_granel=True,
+    ),
     Regra(r"\bERVILHA", "Ervilha em conserva", MERCEARIA),
     Regra(r"\bMAIONESE|\bMAION", "Maionese", MERCEARIA, True, "g"),
-    Regra(r"\bKETCHUP|CATCHUP", "Ketchup", MERCEARIA, True, "g"),
+    Regra(r"\bKETCHUP|CATCHUP|\bKETCH\b", "Ketchup", MERCEARIA, True, "g"),
     Regra(r"\bMOSTARDA", "Mostarda", MERCEARIA),
     Regra(r"\bVINAGRE", "Vinagre", MERCEARIA, True, "ml"),
     Regra(
@@ -384,7 +438,11 @@ REGRAS: tuple[Regra, ...] = (
     Regra(r"TRIGO\s*P\/?\s*KIBE|\bQUIBE", "Trigo para quibe", MERCEARIA),
     Regra(r"MILHO\s*DE\s*PIPOCA|\bPIPOCA", "Milho de pipoca", MERCEARIA),
     Regra(r"^MEL\b|\bMEL\s+BALDONI", "Mel", MERCEARIA),
-    Regra(r"MOLHO\s*DE\s*ALHO|MOLHO.*(SHOYU|INGLES|BARBECUE)", "Molho pronto", MERCEARIA),
+    Regra(
+        r"MOLHO\s*DE\s*ALHO|MOLHO.*(SHOYU|INGLES|BARBECUE)|\bMOL\s+ALHO",
+        "Molho pronto",
+        MERCEARIA,
+    ),
     Regra(r"MASSA\s*P\/?\s*PASTEL|MASSA.*PASTEL", "Massa para pastel", MERCEARIA),
     Regra(r"MASSA\s*C\/?\s*OVOS", "Macarrão", MERCEARIA, True, "g"),
     Regra(r"^TORRADA", "Torrada", MERCEARIA),
@@ -392,7 +450,7 @@ REGRAS: tuple[Regra, ...] = (
     Regra(r"\bGRAO\s*DE\s*BICO", "Grão de bico", MERCEARIA),
     Regra(
         r"\bLOURO\b|\bOREGANO|\bCOMINHO|\bCOLORIFICO|\bPIMENTA\s*DO\s*REINO"
-        r"|\bTEMPERO|^TEM\b",
+        r"|\bTEMPERO|^TEM\b|\bTEMP\s+(CEB|ALH|SAL|CHEIR|COMPL)",
         "Tempero seco",
         MERCEARIA,
         separar_granel=True,
@@ -474,17 +532,22 @@ REGRAS: tuple[Regra, ...] = (
     Regra(r"\bESPONJA|ESP\s*ANT|\bBOMBRIL|\bPALHA\s*DE\s*ACO", "Esponja", LIMPEZA, True, "g"),
     Regra(r"\bINSETICIDA|\bSBP\b|\bBAYGON", "Inseticida", LIMPEZA),
     Regra(r"LIMPA\s*VIDRO|\bVIDREX", "Limpa-vidros", LIMPEZA, True, "ml"),
-    Regra(r"ALCOOL\s*GEL", "Álcool em gel", HIGIENE),
+    Regra(r"ALCOOL\s*GEL|\bALC\s*GEL", "Álcool em gel", HIGIENE),
     Regra(r"^ALCOOL\b", "Álcool", LIMPEZA, True, "L"),
     Regra(r"\bRODO\b|\bVASSOURA|\bBALDE\b|\bPANO\s*DE", "Utensílio de limpeza", LIMPEZA),
     Regra(r"\bRALO\b|\bRALINHO|\bRAL\b.*PIA", "Ralo de pia", LIMPEZA),
     Regra(r"^CARVAO", "Carvão", OUTROS),
     Regra(r"LIMP.*CREMOSO|\bSAPOLIO", "Limpador cremoso", LIMPEZA),
-    Regra(r"LIMP.*(CASA|MULT|PERF)|\bMULTIUSO|\bVEJA\b", "Limpador multiuso", LIMPEZA),
+    Regra(
+        r"LIMP.*(CASA|MULT|PERF)|\bLIMP\s+MUL\b|\bMULTIUSO|\bVEJA\b|\bCIF\b",
+        "Limpador multiuso",
+        LIMPEZA,
+    ),
     # ================================================================ higiene
     # "PAPEL TOALHA" e "PAPEL HIGIENICO" antes de qualquer "PAPEL".
     Regra(r"PAPEL\s*(TO|TOALHA)|\bPAP\s*TOA", "Papel toalha", DESCARTAVEIS),
-    Regra(r"PAPEL\s*(HIG|HIGIENICO)|\bPA\s*HIG?\b", "Papel higiênico", HIGIENE),
+    Regra(r"PAPEL\s*(HIG|HIGIENICO)|\bPAP\s*HIG|\bPA\s*HIG?\b", "Papel higiênico", HIGIENE),
+    Regra(r"ANTIS.*BUC|ENXAG.*BUC|\bLISTERINE", "Antisséptico bucal", HIGIENE, True, "ml"),
     Regra(r"SABONETE\s*LIQ|SABON\s*LIQ", "Sabonete líquido", HIGIENE),
     Regra(r"\bSABONETE|\bSABON\b", "Sabonete em barra", HIGIENE, True, "g"),
     Regra(
@@ -507,8 +570,11 @@ REGRAS: tuple[Regra, ...] = (
     Regra(r"DISCO.*ALGO|ALGODAO", "Algodão", HIGIENE),
     Regra(r"\bTINTURA|\bCOLORACAO|\bKOLESTON", "Tintura de cabelo", HIGIENE),
     Regra(r"\bFRALDA", "Fralda", HIGIENE),
+    # "UMEDECIDO" antes de "LENCO": o específico primeiro, senão o lenço umedecido cai na
+    # série do lenço de papel comum, que é outro produto e outro preço. O `TOALH\w*` cobre
+    # as duas formas em que a loja escreve — "TOALHAS UMED." e o "TOALH UMED" truncado.
+    Regra(r"TOALH\w*\s*\.?\s*UMED|LENCO\s*\.?\s*UMED", "Lenço umedecido", HIGIENE),
     Regra(r"\bLENCO", "Lenço de papel", HIGIENE),
-    Regra(r"TOALHA.*UMED|LENCO.*UMED", "Lenço umedecido", HIGIENE),
     Regra(r"FIO\s*DENTAL", "Fio dental", HIGIENE),
     Regra(r"\bBARBEAR|\bGILLETTE|\bPRESTOBARBA", "Aparelho de barbear", HIGIENE),
     # =========================================================== descartáveis
@@ -575,7 +641,9 @@ def extrair_tamanho(descricao: str, unidade_provavel: str | None = None) -> str 
         and not _NAO_E_MEDIDA.search(alvo)
         and (achado := _TAMANHO_SEM_UNIDADE.search(alvo))
     ):
-        return f"{_formatar_quantidade(achado.group(1))}{unidade_provavel}"
+        quantidade = _formatar_quantidade(achado.group(1))
+        if float(quantidade) >= _MINIMO_PLAUSIVEL.get(unidade_provavel, 0.0):
+            return f"{quantidade}{unidade_provavel}"
 
     return None
 

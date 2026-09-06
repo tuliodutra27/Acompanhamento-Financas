@@ -348,3 +348,109 @@ class TestRegrasNovas:
         achado = classificado(descricao)
         assert achado.nome.startswith("Isotônico")
         assert achado.categoria == "Bebidas"
+
+
+class TestCupomTruncadoEm20Caracteres:
+    """As notas mais recentes chegam com a descrição cortada em 20 caracteres.
+
+    Isso muda o que as regras precisam reconhecer — "BATATA PALHA" vira "BAT PAL",
+    "PAPEL HIGIENICO" vira "PAP HIG" — e cria uma armadilha nova: o corte cai no meio da
+    medida.
+    """
+
+    @pytest.mark.parametrize(
+        "descricao,esperado",
+        [
+            ("ALC GEL 70 FARMAX", "Álcool em gel"),
+            ("AZEIT OLI CINQ TER 5", "Azeite"),
+            ("KETCH G BONARE 1,02k", "Ketchup"),
+            ("LIMP MUL CIF L500P42", "Limpador multiuso"),
+            ("PAP HIG F DUP SUBL 3", "Papel higiênico"),
+            ("TEMP CEB SAL ALH kg", "Tempero seco"),
+        ],
+    )
+    def test_abreviacoes_do_cupom(self, descricao, esperado):
+        assert classificado(descricao).nome.startswith(esperado)
+
+    def test_azeitona_abreviada_nao_vira_azeite(self):
+        """"AZEIT V" é azeitona verde. O "E" de AZEITE é o que separa os dois: sem ele,
+        a palavra é "AZEIT" e a regra da azeitona ganha primeiro."""
+        assert classificado("AZEIT V VALE FERT 12").nome == "Azeitona"
+        assert classificado("AZEITE EXT VIRGEM 500ML").nome == "Azeite 500ml"
+
+    @pytest.mark.parametrize(
+        "descricao", ["AZEIT OLI CINQ TER 5", "C CAF AU LAIT NES 10"]
+    )
+    def test_numero_cortado_nao_vira_tamanho(self, descricao):
+        """"...500ML" cortado vira "...5". Ler isso como "5ml" criaria um produto
+        fantasma que rouba compras do produto real — melhor ficar sem sufixo."""
+        assert not any(c.isdigit() for c in classificado(descricao).nome)
+
+    def test_numero_plausivel_no_fim_continua_valendo(self):
+        """O piso não pode desligar o caso que `unidade_provavel` existe para resolver."""
+        assert classificado("REFRI COCA-COLA 600").nome == "Refrigerante 600ml"
+
+    def test_k_solto_no_fim_e_quilo_cortado(self):
+        assert classificado("KETCH G BONARE 1,02k").nome.endswith("kg")
+
+
+class TestCafeNaoEngoleQuemSoCitaCafe:
+    """Regressão de dois agrupamentos errados encontrados no banco em 05/09/2026.
+
+    `\bCAFE\b` precisa vir cedo para ganhar de "MOIDO", e por isso engolia produtos mais
+    específicos. Corrigido movendo bolo e cápsulas para antes dela.
+    """
+
+    def test_bolo_cafe_da_manha_e_bolo(self):
+        achado = classificado("BOLO CAFE DA MANHA CASA SUICA 250G GOTAS CHOCOLATE")
+        assert achado.nome == "Bolo"
+        assert achado.categoria == "Padaria"
+
+    @pytest.mark.parametrize(
+        "descricao",
+        ["CAPS CAFE KOPEN 60G", "CAPS NESC D GUST 80G", "C NESC D GUST 117G C"],
+    )
+    def test_capsulas_ficam_juntas(self, descricao):
+        assert classificado(descricao).nome == "Cápsulas de café"
+
+    def test_cafe_de_verdade_segue_cafe(self):
+        assert classificado("CAFE TOR.E MOIDO 250G").nome == "Café 250g"
+
+    def test_cappuccino_em_po_nao_e_capsula_nem_cafe(self):
+        assert classificado("C CAF AU LAIT NES 10").nome == "Cappuccino"
+
+    def test_piso_de_gramas_nao_separa_tamanho_real(self):
+        """24 g é uma barra de chocolate de verdade, não um número mutilado — o piso não
+        pode cortá-la, senão "CHOCOSTICK NESTLE 24" vira outro produto que
+        "CHOCOST GAROTO 24G B"."""
+        assert classificado("CHOCOSTICK NESTLE 24").nome == "Chocolate 24g"
+        assert classificado("CHOCOST GAROTO 24G B").nome == "Chocolate 24g"
+
+
+class TestSeparaOQueMudaOPreco:
+    """Grupos que o diagnóstico de grupos suspeitos apontou em 05/09/2026.
+
+    Nos três casos o preço variava 3× a 5× sem nada ter acontecido no mercado: o que
+    mudava era o produto dentro do grupo.
+    """
+
+    def test_alho_limpo_separado_do_alho_com_casca(self):
+        """R$ 25-30/kg contra R$ 9-16/kg — descascar é o que se está pagando."""
+        assert classificado("ALHO LIMPO kg ESPECIAL").nome.startswith("Alho limpo")
+        assert classificado("ALHO kg N.4").nome.startswith("Alho")
+        assert not classificado("ALHO kg N.4").nome.startswith("Alho limpo")
+
+    def test_alho_picado_em_conserva_nao_e_hortifruti(self):
+        achado = classificado("ALHO CEB PICAD ZANA")
+        assert achado.nome == "Alho e cebola picados"
+        assert achado.categoria == "Mercearia"
+
+    def test_batata_processada_separada_da_comum(self):
+        assert classificado("BATATA INGLESA PROCESSADA kg").nome.startswith(
+            "Batata processada"
+        )
+        assert classificado("BATATA INGLESA kg GRANEL").nome.startswith("Batata inglesa")
+
+    def test_batata_primeirinha_entra_com_a_inglesa(self):
+        """Mesma faixa de preço (R$ 3,99/kg) e mesmo uso — é variedade, não outro item."""
+        assert classificado("BATATA PRIMEIRINHA kg").nome.startswith("Batata inglesa")
